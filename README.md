@@ -37,27 +37,26 @@ node server/index.js
 
 ## CI/CD
 
-Every push/PR to `main` runs lint + build via GitHub Actions (`.github/workflows/ci-cd.yml`).
-On push to `main`, it also deploys:
+This repo is the canonical repo for both deploys. Every push/PR to `main` runs lint + build
+via GitHub Actions (`.github/workflows/ci-cd.yml`). On push to `main`, it also triggers a
+backend deploy on Render.
 
-- **Frontend → Vercel** (static `dist/` build)
-- **Backend → Render** (Express/Socket.IO server, via `render.yaml`)
+- **Frontend → Vercel**, deployed via Vercel's own GitHub integration connected to this repo
+  (builds/deploys automatically on push, independent of the Actions workflow).
+- **Backend → Render** (Express/Socket.IO server, via `render.yaml` + an Actions deploy hook).
 
 ### One-time setup (per maintainer)
 
 1. **Render (backend)**
-   - Create a new Web Service on [Render](https://render.com), connecting this repo. Render will pick up `render.yaml` automatically.
+   - Create (or reconnect) a Web Service on [Render](https://render.com) pointing at this repo. Render will pick up `render.yaml` automatically.
    - In the Render dashboard, set the `JWT_SECRET`, `EMAIL_USER`, `EMAIL_PASS` env vars on the service.
    - Under the service's **Settings → Deploy Hook**, copy the deploy hook URL.
    - In this GitHub repo, add it as secret `RENDER_DEPLOY_HOOK_URL` (Settings → Secrets and variables → Actions).
    - Note the service's public URL (e.g. `https://student-tracker-api.onrender.com`) — needed below.
 
 2. **Vercel (frontend)**
-   - Create a new project on [Vercel](https://vercel.com) importing this repo (framework: Vite).
-   - Add env var `VITE_API_URL` = your Render backend URL from step 1.
-   - Get a [Vercel API token](https://vercel.com/account/tokens), and your Org ID / Project ID (`vercel link` locally, then check `.vercel/project.json`).
-   - Add GitHub repo secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
-
-Once both are connected and secrets are set, every merge to `main` auto-deploys both services.
+   - In the Vercel dashboard for this project, go to Settings → Environment Variables and set
+     `VITE_API_URL` = your Render backend URL from step 1.
+   - No GitHub secrets are needed for Vercel — it deploys directly, not through Actions.
 
 > Note: the backend currently stores data in memory (see `server/models/`), so every backend redeploy/restart resets all data. Fine for a class project demo; would need a real database for persistent data.

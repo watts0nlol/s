@@ -196,7 +196,7 @@ function App() {
       <Chat />
       <AnalyticsDashboard token={token} />
 
-      <form className="form" onSubmit={addAssignment}>
+      <form className="form" id="assignment-form" onSubmit={addAssignment}>
         <h2>Add Assignment</h2>
         <input
           type="text"
@@ -229,7 +229,7 @@ function App() {
         <button type="submit">Add Assignment</button>
       </form>
 
-      <div className="list">
+      <div className="list" id="assignment-list">
         <h2>📋 Your Assignments</h2>
         {loading ? (
           <p>Loading...</p>

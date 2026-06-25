@@ -13,6 +13,7 @@ import analyticsRouter from "./routers/analytics.js";
 
 
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
+import { connectDB } from "./db.js";
 
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -79,6 +80,13 @@ io.on("connection", (socket) => {
 
 const port = process.env.PORT || 8001;
 
-server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+connectDB()
+  .then(() => {
+    server.listen(port, () => {
+      console.log(`Server running on http://localhost:${port}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  });

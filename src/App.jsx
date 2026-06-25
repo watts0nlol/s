@@ -83,7 +83,7 @@ function App() {
 
   const addAssignment = async (e) => {
     e.preventDefault();
-    if (!title || !date || !studentId) return;
+    if (!title || !date) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/assignments`, {
         method: "POST",
@@ -196,16 +196,16 @@ function App() {
       <Chat />
       <AnalyticsDashboard token={token} />
 
-      {isTeacherOrAdmin && (
-        <form className="form" onSubmit={addAssignment}>
-          <h2>Add Assignment</h2>
-          <input
-            type="text"
-            placeholder="Assignment Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
+      <form className="form" onSubmit={addAssignment}>
+        <h2>Add Assignment</h2>
+        <input
+          type="text"
+          placeholder="Assignment Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+        {isTeacherOrAdmin && (
           <input
             type="text"
             placeholder="Student ID"
@@ -213,21 +213,21 @@ function App() {
             onChange={(e) => setStudentId(e.target.value)}
             required
           />
-          <input
-            type="text"
-            placeholder="Course (optional)"
-            value={course}
-            onChange={(e) => setCourse(e.target.value)}
-          />
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-          />
-          <button type="submit">Add Assignment</button>
-        </form>
-      )}
+        )}
+        <input
+          type="text"
+          placeholder="Course (optional)"
+          value={course}
+          onChange={(e) => setCourse(e.target.value)}
+        />
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+        />
+        <button type="submit">Add Assignment</button>
+      </form>
 
       <div className="list">
         <h2>📋 Your Assignments</h2>

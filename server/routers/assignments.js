@@ -18,8 +18,7 @@ router.get('/', listAssignments); // Route to list all assignments
 // (students see only their own, teachers/admins see all)
 router.get('/:id', getAssignment); // Route to get a single assignment by ID 
 // (students can only access their own)
-router.post('/', requireRole('teacher', 'admin'), createAssignment); // Route to create a new
-//  assignment (only teachers and admins)
+router.post('/', createAssignment); // Route to create a new assignment (all authenticated users)
 router.put('/:id', requireRole('teacher', 'admin'), updateAssignment); // Route to update an
 // existing assignment (only teachers and admins)
 router.delete('/:id', requireRole('teacher', 'admin'), deleteAssignment); // Route to delete an 

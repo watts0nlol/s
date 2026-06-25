@@ -127,7 +127,7 @@ function App() {
 
   if (!token || !user) {
     return (
-      <div className="container">
+      <div className="container auth-container">
         <h1>Student Assignment Tracker</h1>
         <form className="form auth-form" onSubmit={handleAuth}>
           <h2>{authMode === "login" ? "Log In" : "Register"}</h2>

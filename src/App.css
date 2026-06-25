@@ -870,6 +870,7 @@ h2 {
   }
 }
 
+>>>>>>> myrepo/main
 .notification {
   background: #fff8e1;
   border: 1px solid #ffe082;
@@ -911,6 +912,19 @@ h2 {
 
 .logout-btn:hover {
   background-color: #616161;
+}
+
+.auth-container {
+  background: #000;
+  min-height: 100vh;
+  margin: 0;
+  max-width: 100%;
+  padding: 0;
+}
+
+.auth-container h1 {
+  color: #fff;
+  padding-top: 40px;
 }
 
 .auth-form {

@@ -30,7 +30,8 @@ export const getAssignment = async (req, res, next) => {
 
 export const createAssignment = async (req, res, next) => {
   try {
-    const { title, description, studentId, dueDate, grade, weight, course } = req.body;
+    const { title, description, dueDate, grade, weight, course } = req.body;
+    const studentId = req.user.role === 'student' ? req.user.userId : req.body.studentId;
 
     if (!title || !studentId || !dueDate) {
       return res.status(400).json({ error: 'title, studentId, and dueDate are required' });

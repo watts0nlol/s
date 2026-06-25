@@ -78,7 +78,7 @@ function App() {
       <AnalyticsDashboard token={token} />
 
       {/* Form */}
-      <div className="form">
+      <div className="form" id="assignment-form">
         <input
           type="text"
           placeholder="Assignment Title"
@@ -96,7 +96,7 @@ function App() {
       </div>
 
       {/* Assignment List */}
-      <div className="list">
+      <div className="list" id="assignment-list">
         <h2>📋 Your Assignments</h2>
 
         {assignments.length === 0 ? (

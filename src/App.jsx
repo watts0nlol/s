@@ -65,7 +65,7 @@ function App() {
 
   return (
     <div className="container">
-      <h1>Student Assignment Tracker</h1>
+      <h1>Student Assignment Tracker 2</h1>
       {notification && (
   <div className="notification">
     🔔 {notification}

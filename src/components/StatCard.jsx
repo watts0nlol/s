@@ -1,63 +1,32 @@
-const StatCard = ({ title, value, sub, color, icon }) => {
+const StatCard = ({ title, value, sub, color, icon, trend }) => {
   return (
     <div
+      className="stat-card"
       style={{
-        background: "#fff",
-        borderRadius: "14px",
-        padding: "16px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
-        borderTop: `4px solid ${color}`,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        minWidth: "140px",
-        transition: "0.2s ease",
+        "--stat-color": color,
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-3px)")}
-      onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0px)")}
     >
-      {/* Top Row (Title + Icon) */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <p
-          style={{
-            fontSize: "12px",
-            color: "#888",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            margin: 0,
-          }}
-        >
-          {title}
-        </p>
+      <div className="stat-card-top">
+        <p>{title}</p>
 
         {icon && (
-          <span style={{ fontSize: "18px" }}>
+          <span className="stat-card-icon">
             {icon}
           </span>
         )}
       </div>
 
-      {/* Main Value */}
-      <h2
-        style={{
-          fontSize: "28px",
-          margin: "8px 0",
-          color: color,
-          fontWeight: "700",
-        }}
-      >
-        {value}
-      </h2>
+      <h2>{value}</h2>
 
-      {/* Sub text */}
       {sub && (
-        <span
-          style={{
-            fontSize: "12px",
-            color: "#666",
-          }}
-        >
+        <span className="stat-card-sub">
           {sub}
+        </span>
+      )}
+
+      {trend && (
+        <span className="stat-card-trend">
+          {trend}
         </span>
       )}
     </div>

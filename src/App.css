@@ -914,7 +914,7 @@ h2 {
 }
 
 .auth-container {
-  background: #000;
+  background: #fff;
   min-height: 100vh;
   margin: 0;
   max-width: 100%;
@@ -922,7 +922,7 @@ h2 {
 }
 
 .auth-container h1 {
-  color: #fff;
+  color: #172033;
   padding-top: 40px;
 }
 

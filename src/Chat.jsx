@@ -40,7 +40,7 @@ function Chat() {
         placeholder="Type message"
       />
 
-      <button onClick={sendMessage}>Send</button>
+      <button onClick={sendMessage}>Send!</button>
 
       <div>
         {messages.map((m, index) => (

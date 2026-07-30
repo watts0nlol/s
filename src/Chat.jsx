@@ -37,10 +37,10 @@ function Chat() {
       <input
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        placeholder="Type message"
+        placeholder="Type message here"
       />
 
-      <button onClick={sendMessage}>Send!</button>
+      <button onClick={sendMessage}>Send</button>
 
       <div>
         {messages.map((m, index) => (

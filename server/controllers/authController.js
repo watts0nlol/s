@@ -2,14 +2,13 @@ import bcrypt from 'bcryptjs';
 import { generateToken } from '../middleware/auth.js';
 import { User } from '../models/users.js';
 import sendEmail from '../utils/sendEmail.js';
+import { validateLogin, validateRegistration } from '../utils/validation.js';
 
 export const register = async (req, res, next) => {
   try {
-    const { email, password, firstName, lastName, role = 'student' } = req.body;
-
-    if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ error: 'Missing required registration fields' });
-    }
+    const { errors, value } = validateRegistration(req.body);
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+    const { email, password, firstName, lastName } = value;
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
@@ -18,7 +17,8 @@ export const register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = await User.create({ email, password: hashedPassword, firstName, lastName, role });
+    // Public registration is intentionally restricted to student accounts.
+    const newUser = await User.create({ email, password: hashedPassword, firstName, lastName, role: 'student' });
 
     await sendEmail(
       email,
@@ -30,7 +30,7 @@ export const register = async (req, res, next) => {
 
     res.status(201).json({
       token,
-      user: { _id: newUser._id, email: newUser.email, firstName, lastName, role },
+      user: { _id: newUser._id, email: newUser.email, firstName, lastName, role: newUser.role },
     });
   } catch (error) {
     next(error);
@@ -39,11 +39,9 @@ export const register = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
+    const { errors, value } = validateLogin(req.body);
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+    const { email, password } = value;
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
 

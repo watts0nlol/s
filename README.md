@@ -17,7 +17,7 @@ npm install
 
 ### Environment variables
 
-Copy `.env.example` to `.env` and fill in the values (JWT secret, email credentials, etc.):
+Copy `.env.example` to `.env` and fill in the MongoDB URI, JWT secret, and email credentials:
 
 ```bash
 cp .env.example .env
@@ -37,7 +37,7 @@ node server/index.js
 
 ## CI/CD
 
-This repo is the canonical repo for both deploys. Every push/PR to `main` runs lint + build
+This repo is the canonical repo for both deploys. Every push/PR to `main` runs lint, tests, and build
 via GitHub Actions (`.github/workflows/ci-cd.yml`). On push to `main`, it also triggers a
 backend deploy on Render.
 
@@ -49,7 +49,7 @@ backend deploy on Render.
 
 1. **Render (backend)**
    - Create (or reconnect) a Web Service on [Render](https://render.com) pointing at this repo. Render will pick up `render.yaml` automatically.
-   - In the Render dashboard, set the `JWT_SECRET`, `EMAIL_USER`, `EMAIL_PASS` env vars on the service.
+   - In the Render dashboard, set the `MONGODB_URI`, `JWT_SECRET`, `EMAIL_USER`, and `EMAIL_PASS` environment variables on the service.
    - Under the service's **Settings → Deploy Hook**, copy the deploy hook URL.
    - In this GitHub repo, add it as secret `RENDER_DEPLOY_HOOK_URL` (Settings → Secrets and variables → Actions).
    - Note the service's public URL (e.g. `https://student-tracker-api.onrender.com`) — needed below.
@@ -59,4 +59,4 @@ backend deploy on Render.
      `VITE_API_URL` = your Render backend URL from step 1.
    - No GitHub secrets are needed for Vercel — it deploys directly, not through Actions.
 
-> Note: the backend currently stores data in memory (see `server/models/`), so every backend redeploy/restart resets all data. Fine for a class project demo; would need a real database for persistent data.
+The backend stores users and assignments in MongoDB. Ensure the production database permits connections from the Render service and that its indexes are created during deployment.

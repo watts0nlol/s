@@ -35,6 +35,7 @@ function Chat() {
       <h2>Course Chat</h2>
 
       <input
+        aria-label="Course chat message"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Type message here"
@@ -42,7 +43,7 @@ function Chat() {
 
       <button onClick={sendMessage}>Send</button>
 
-      <div>
+      <div aria-live="polite" aria-label="Course chat messages">
         {messages.map((m, index) => (
           <p key={index}>{m}</p>
         ))}

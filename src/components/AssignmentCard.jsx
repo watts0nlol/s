@@ -1,3 +1,5 @@
+import ProgressBar from "./ProgressBar";
+
 const AssignmentCard = ({ assignment }) => {
   const colors = {
     CRITICAL: "#e53935",

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import Announcements from "./Announcements";
 import Chat from "./Chat";
@@ -24,22 +24,20 @@ function App() {
   const [course, setCourse] = useState("");
   const [notification, setNotification] = useState("");
 
-  useEffect(() => {
-    const socket = io(API_BASE_URL);
-    socket.on("notification", (msg) => setNotification(msg));
-    return () => socket.disconnect();
+  const logout = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken("");
+    setUser(null);
+    setAssignments([]);
   }, []);
 
-  useEffect(() => {
-    if (token && user) fetchAssignments();
-  }, [token]);
-
-  const authHeaders = () => ({
+  const authHeaders = useCallback(() => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
-  });
+  }), [token]);
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/assignments`, { headers: authHeaders() });
@@ -50,7 +48,17 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [authHeaders, logout]);
+
+  useEffect(() => {
+    const socket = io(API_BASE_URL);
+    socket.on("notification", (msg) => setNotification(msg));
+    return () => socket.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (token && user) fetchAssignments();
+  }, [fetchAssignments, token, user]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -71,14 +79,6 @@ function App() {
     } catch {
       setAuthError("Network error — is the server running?");
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    setToken("");
-    setUser(null);
-    setAssignments([]);
   };
 
   const addAssignment = async (e) => {
@@ -134,12 +134,14 @@ function App() {
           {authMode === "register" && (
             <>
               <input
+                aria-label="First name"
                 placeholder="First Name"
                 value={authForm.firstName}
                 onChange={(e) => setAuthForm({ ...authForm, firstName: e.target.value })}
                 required
               />
               <input
+                aria-label="Last name"
                 placeholder="Last Name"
                 value={authForm.lastName}
                 onChange={(e) => setAuthForm({ ...authForm, lastName: e.target.value })}
@@ -148,6 +150,7 @@ function App() {
             </>
           )}
           <input
+            aria-label="Email address"
             type="email"
             placeholder="Email"
             value={authForm.email}
@@ -155,13 +158,14 @@ function App() {
             required
           />
           <input
+            aria-label="Password"
             type="password"
             placeholder="Password"
             value={authForm.password}
             onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
             required
           />
-          {authError && <p className="auth-error">{authError}</p>}
+          {authError && <p className="auth-error" role="alert">{authError}</p>}
           <button type="submit">{authMode === "login" ? "Log In" : "Register"}</button>
           <p className="auth-switch">
             {authMode === "login" ? "No account? " : "Have an account? "}
@@ -190,7 +194,7 @@ function App() {
         </div>
       </div>
 
-      {notification && <div className="notification">🔔 {notification}</div>}
+      {notification && <div className="notification" role="status">🔔 {notification}</div>}
 
       <Announcements />
       <Chat />
@@ -199,6 +203,7 @@ function App() {
       <form className="form" id="assignment-form" onSubmit={addAssignment}>
         <h2>Add Assignment</h2>
         <input
+          aria-label="Assignment title"
           type="text"
           placeholder="Assignment Title"
           value={title}
@@ -207,6 +212,7 @@ function App() {
         />
         {isTeacherOrAdmin && (
           <input
+            aria-label="Student ID"
             type="text"
             placeholder="Student ID"
             value={studentId}
@@ -215,12 +221,14 @@ function App() {
           />
         )}
         <input
+          aria-label="Course"
           type="text"
           placeholder="Course (optional)"
           value={course}
           onChange={(e) => setCourse(e.target.value)}
         />
         <input
+          aria-label="Due date"
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
@@ -229,7 +237,7 @@ function App() {
         <button type="submit">Add Assignment</button>
       </form>
 
-      <div className="list" id="assignment-list">
+      <div className="list" id="assignment-list" aria-live="polite">
         <h2>📋 Your Assignments</h2>
         {loading ? (
           <p>Loading...</p>

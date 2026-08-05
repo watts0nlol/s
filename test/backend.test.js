@@ -8,6 +8,7 @@ import { login, register } from '../server/controllers/authController.js';
 import { createAssignment, listAssignments, updateAssignment } from '../server/controllers/assignmentController.js';
 import { getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
+import logger from '../server/middleware/logger.js';
 import { Assignment } from '../server/models/assignments.js';
 import { User } from '../server/models/users.js';
 import { calculateGPA, prioritizeAssignments } from '../server/utils/analytics.js';
@@ -74,6 +75,57 @@ test('registration rejects malformed identity fields and weak passwords', async 
   assert.match(res.body.error, /email must be valid/);
   assert.match(res.body.error, /password must be at least 8 characters/);
   assert.match(res.body.error, /firstName must be a string/);
+});
+
+test('registration succeeds when welcome email delivery fails', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findOne', async () => null);
+  mock.method(User, 'create', async (value) => ({ ...value, _id: 'user-email-failure' }));
+  mock.method(nodemailer, 'createTransport', () => ({
+    sendMail: async () => { throw new Error('SMTP unavailable'); },
+  }));
+  mock.method(console, 'error', () => undefined);
+
+  const res = response();
+  await register({
+    body: {
+      email: 'student@example.com',
+      password: 'Password123',
+      firstName: 'Email',
+      lastName: 'Failure',
+    },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.user.email, 'student@example.com');
+  assert.equal(typeof res.body.token, 'string');
+});
+
+test('request logger redacts password fields without changing other request data', (t) => {
+  const output = [];
+  t.after(() => mock.restoreAll());
+  mock.method(console, 'log', (message) => output.push(message));
+  const req = {
+    url: '/api/auth/register?password=query-secret',
+    query: { source: 'demo', password: 'query-secret' },
+    params: {},
+    body: {
+      email: 'student@example.com',
+      password: 'plain-secret',
+      profile: { passwordConfirmation: 'plain-secret', firstName: 'Demo' },
+    },
+  };
+  let continued = false;
+
+  logger(req, {}, () => { continued = true; });
+
+  const bodyLog = output.find((line) => line.startsWith('body:'));
+  assert.equal(continued, true);
+  assert.match(bodyLog, /student@example\.com/);
+  assert.match(bodyLog, /\[REDACTED\]/);
+  assert.doesNotMatch(bodyLog, /plain-secret/);
+  assert.equal(output.some((line) => line.includes('query-secret')), false);
+  assert.equal(req.body.password, 'plain-secret');
 });
 
 test('login validates input and returns a JWT for valid credentials', async (t) => {

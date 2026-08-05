@@ -20,11 +20,15 @@ export const register = async (req, res, next) => {
     // Public registration is intentionally restricted to student accounts.
     const newUser = await User.create({ email, password: hashedPassword, firstName, lastName, role: 'student' });
 
-    await sendEmail(
-      email,
-      'Welcome to Student Portal',
-      `Hello ${firstName}, your account was successfully created.`
-    );
+    try {
+      await sendEmail(
+        email,
+        'Welcome to Student Portal',
+        `Hello ${firstName}, your account was successfully created.`
+      );
+    } catch (emailError) {
+      console.error('Welcome email delivery failed:', emailError.message);
+    }
 
     const token = generateToken(newUser);
 

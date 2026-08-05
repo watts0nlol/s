@@ -2,6 +2,11 @@ const ProgressBar = ({ value, color = "#4CAF50" }) => {
   return (
     <div style={{ marginBottom: "12px" }}>
       <div
+        aria-label="Assignment progress"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={value}
+        role="progressbar"
         style={{
           background: "#eee",
           borderRadius: "12px",

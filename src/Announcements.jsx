@@ -12,8 +12,8 @@ function Announcements() {
   }, []);
 
   return (
-    <div>
-      <h2>Announcement Board</h2>
+    <section aria-labelledby="announcement-heading">
+      <h2 id="announcement-heading">Announcement Board</h2>
 
       {announcements.length === 0 && <p>No announcements yet</p>}
 
@@ -23,7 +23,7 @@ function Announcements() {
           <p>{a.message}</p>
         </div>
       ))}
-    </div>
+    </section>
   );
 }
 

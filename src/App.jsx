@@ -10,7 +10,15 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem("user");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+
+    try {
+      return JSON.parse(saved);
+    } catch {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      return null;
+    }
   });
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({ email: "", password: "", firstName: "", lastName: "" });
@@ -23,6 +31,7 @@ function App() {
   const [studentId, setStudentId] = useState("");
   const [course, setCourse] = useState("");
   const [notification, setNotification] = useState("");
+  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
 
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -93,6 +102,7 @@ function App() {
       if (res.ok) {
         const created = await res.json();
         setAssignments((prev) => [...prev, created]);
+        setAnalyticsRefreshKey((key) => key + 1);
         setTitle(""); setDate(""); setStudentId(""); setCourse("");
       }
     } catch (err) {
@@ -106,7 +116,10 @@ function App() {
         method: "DELETE",
         headers: authHeaders(),
       });
-      if (res.ok) setAssignments((prev) => prev.filter((a) => a._id !== id));
+      if (res.ok) {
+        setAssignments((prev) => prev.filter((a) => a._id !== id));
+        setAnalyticsRefreshKey((key) => key + 1);
+      }
     } catch (err) {
       console.error("Failed to delete assignment:", err);
     }
@@ -198,7 +211,7 @@ function App() {
 
       <Announcements />
       <Chat />
-      <AnalyticsDashboard token={token} />
+      <AnalyticsDashboard token={token} refreshKey={analyticsRefreshKey} />
 
       <form className="form" id="assignment-form" onSubmit={addAssignment}>
         <h2>Add Assignment</h2>

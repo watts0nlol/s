@@ -134,34 +134,38 @@ const getAverageGrade = (trendData) => {
   return parseFloat((trendData.reduce((sum, pt) => sum + (pt.grade || 0), 0) / trendData.length).toFixed(1));
 };
 
-export default function AnalyticsDashboard({ token }) {
+export default function AnalyticsDashboard({ token, refreshKey }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [usingFallback, setUsingFallback] = useState(false);
+  const [error, setError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
+        setError("");
         const res = await fetch(`${API_BASE_URL}/api/analytics/dashboard`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error(`Analytics request failed with status ${res.status}`);
         const json = await res.json();
         setData(json);
-        setUsingFallback(false);
-        if (json.courses?.length > 0) setSelectedCourse(json.courses[0].courseName);
+        setSelectedCourse((current) =>
+          json.courses?.some((course) => course.courseName === current)
+            ? current
+            : json.courses?.[0]?.courseName ?? null
+        );
       } catch {
-        setData(MOCK_DATA);
-        setUsingFallback(true);
-        setSelectedCourse(MOCK_DATA.courses[0].courseName);
+        setData(null);
+        setError("Analytics could not be loaded. Check your connection and try again.");
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [token]);
+  }, [refreshKey, retryKey, token]);
 
   if (loading) {
     return (
@@ -170,6 +174,17 @@ export default function AnalyticsDashboard({ token }) {
           <div className="dashboard-loader" aria-hidden="true" />
           <h2>Loading analytics</h2>
           <p>Your course progress is being prepared.</p>
+        </div>
+      </section>
+    );
+  }
+  if (error) {
+    return (
+      <section className="dashboard-shell">
+        <div className="dashboard-state dashboard-card" role="alert">
+          <h2>Unable to load analytics</h2>
+          <p>{error}</p>
+          <button type="button" onClick={() => setRetryKey((key) => key + 1)}>Retry</button>
         </div>
       </section>
     );
@@ -201,7 +216,6 @@ export default function AnalyticsDashboard({ token }) {
             <p>completion rate</p>
           </div>
           <a className="dashboard-primary-action" href="#assignment-form">Add Assignment</a>
-          {usingFallback && <div className="dashboard-fallback">Preview data shown</div>}
         </div>
       </div>
 
@@ -463,46 +477,3 @@ export default function AnalyticsDashboard({ token }) {
     </section>
   );
 }
-
-const MOCK_DATA = {
-  cumulativeGPA: 3.2,
-  totalAssignments: 8,
-  completedAssignments: 5,
-  upcomingPriority: [
-    { title: "Lab 3 Report", course: "CPAN 212", priority: "CRITICAL", daysUntilDue: 0.8, weight: 15 },
-    { title: "Midterm Exam", course: "CPAN 314", priority: "HIGH", daysUntilDue: 2.5, weight: 30 },
-    { title: "Assignment 4", course: "CPAN 212", priority: "MEDIUM", daysUntilDue: 4.1, weight: 10 },
-  ],
-  courses: [
-    {
-      courseName: "CPAN 314",
-      gpa: { gpa: 3.3, percentage: 82, letterGrade: "A-", totalWeight: 40 },
-      prediction: { predicted: 78.5, bestCase: 91, worstCase: 57, predictedLetter: "B+", remainingWeight: 60, completedWeight: 40 },
-      risk: { riskLevel: "LOW", alerts: ["📌 Current grade (82%) could be improved."], recommendations: ["Maintain consistent effort on remaining assignments."] },
-      trends: {
-        summary: "📈 Overall trend: improving. Average: 79%. Best: 88%, Lowest: 68%.",
-        trendData: [
-          { title: "Quiz 1", grade: 68, trend: "stable" },
-          { title: "Lab 1", grade: 75, trend: "improving" },
-          { title: "Assignment 1", grade: 82, trend: "improving" },
-          { title: "Midterm", grade: 85, trend: "improving" },
-          { title: "Lab 2", grade: 88, trend: "improving" },
-        ],
-      },
-    },
-    {
-      courseName: "CPAN 212",
-      gpa: { gpa: 2.7, percentage: 73, letterGrade: "B", totalWeight: 30 },
-      prediction: { predicted: 69, bestCase: 84, worstCase: 51, predictedLetter: "C+", remainingWeight: 70, completedWeight: 30 },
-      risk: { riskLevel: "MEDIUM", alerts: ["📉 Current grade (73%) needs improvement."], recommendations: ["Focus on high-weight assignments."] },
-      trends: {
-        summary: "📉 Overall trend: declining. Average: 73%. Best: 80%, Lowest: 65%.",
-        trendData: [
-          { title: "Assignment 1", grade: 80, trend: "stable" },
-          { title: "Lab 1", grade: 76, trend: "declining" },
-          { title: "Quiz 1", grade: 65, trend: "declining" },
-        ],
-      },
-    },
-  ],
-};

@@ -5,10 +5,12 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 
 import { login, register } from '../server/controllers/authController.js';
-import { createAssignment, updateAssignment } from '../server/controllers/assignmentController.js';
+import { createAssignment, listAssignments, updateAssignment } from '../server/controllers/assignmentController.js';
+import { getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import { Assignment } from '../server/models/assignments.js';
 import { User } from '../server/models/users.js';
+import { calculateGPA, prioritizeAssignments } from '../server/utils/analytics.js';
 import { validateAssignment } from '../server/utils/validation.js';
 
 process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-backend-tests';
@@ -184,4 +186,98 @@ test('assignment update rejects an invalid status without saving', async (t) => 
 
   assert.equal(res.statusCode, 400);
   assert.equal(saved, false);
+});
+
+test('priority analytics returns plain assignment fields without Mongoose internals', () => {
+  const dueDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+  const input = {
+    _id: 'assignment-2',
+    title: 'Research Paper',
+    description: 'Draft and revise',
+    studentId: 'student-1',
+    dueDate,
+    status: 'assigned',
+    grade: 80,
+    weight: 20,
+    course: 'CPAN 366',
+  };
+
+  const [result] = prioritizeAssignments([input]);
+
+  assert.equal(result.title, input.title);
+  assert.equal(result.description, input.description);
+  assert.equal(result.studentId, input.studentId);
+  assert.equal(result.course, input.course);
+  assert.equal(result.priorityScore, 30);
+  assert.equal(result.priorityLabel, 'MEDIUM');
+  assert.equal(Object.hasOwn(result, '$__'), false);
+  assert.equal(Object.hasOwn(result, '__'), false);
+  assert.equal(Object.hasOwn(result, '_doc'), false);
+});
+
+test('lean analytics preserves the existing GPA output contract and calculation', async (t) => {
+  const assignments = [
+    { grade: 90, weight: 40, course: 'CPAN 366', status: 'completed' },
+    { grade: 80, weight: 60, course: 'CPAN 366', status: 'completed' },
+  ];
+  let filter;
+  let leanCalled = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'find', (receivedFilter) => {
+    filter = receivedFilter;
+    return {
+      lean: async () => {
+        leanCalled = true;
+        return assignments;
+      },
+    };
+  });
+
+  const res = response();
+  await getGPA({ user: { userId: 'student-1' }, query: { course: 'CPAN 366' } }, res, failNext);
+
+  assert.deepEqual(filter, { studentId: 'student-1', course: 'CPAN 366' });
+  assert.equal(leanCalled, true);
+  assert.deepEqual(res.body, { course: 'CPAN 366', ...calculateGPA(assignments) });
+  assert.deepEqual(res.body, { course: 'CPAN 366', average: 84, gpa: 3.3, letter: 'A-' });
+});
+
+test('assignment schema declares indexes for current filters and sorts', () => {
+  const indexes = Assignment.schema.indexes().map(([fields]) => fields);
+
+  assert.ok(indexes.some((fields) => fields.studentId === 1 && fields.dueDate === 1));
+  assert.ok(indexes.some((fields) => fields.studentId === 1 && fields.course === 1));
+  assert.ok(indexes.some((fields) => Object.keys(fields).length === 1 && fields.dueDate === 1));
+});
+
+test('lean assignment listing preserves the existing filter, sort, and response', async (t) => {
+  const assignments = [
+    { _id: 'assignment-3', studentId: 'student-1', title: 'First', dueDate: '2026-08-10' },
+    { _id: 'assignment-4', studentId: 'student-1', title: 'Second', dueDate: '2026-08-20' },
+  ];
+  let filter;
+  let sort;
+  let leanCalled = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'find', (receivedFilter) => {
+    filter = receivedFilter;
+    return {
+      sort(receivedSort) {
+        sort = receivedSort;
+        return this;
+      },
+      async lean() {
+        leanCalled = true;
+        return assignments;
+      },
+    };
+  });
+
+  const res = response();
+  await listAssignments({ user: { userId: 'student-1', role: 'student' } }, res, failNext);
+
+  assert.deepEqual(filter, { studentId: 'student-1' });
+  assert.deepEqual(sort, { dueDate: 1 });
+  assert.equal(leanCalled, true);
+  assert.deepEqual(res.body, assignments);
 });

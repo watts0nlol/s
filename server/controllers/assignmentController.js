@@ -5,7 +5,7 @@ export const listAssignments = async (req, res, next) => {
   try {
     const user = req.user;
     const filter = user.role === 'student' ? { studentId: user.userId } : {};
-    const assignments = await Assignment.find(filter).sort({ dueDate: 1 });
+    const assignments = await Assignment.find(filter).sort({ dueDate: 1 }).lean();
     res.json(assignments);
   } catch (error) {
     next(error);
@@ -14,7 +14,7 @@ export const listAssignments = async (req, res, next) => {
 
 export const getAssignment = async (req, res, next) => {
   try {
-    const assignment = await Assignment.findById(req.params.id);
+    const assignment = await Assignment.findById(req.params.id).lean();
     if (!assignment) {
       return res.status(404).json({ error: 'Assignment not found' });
     }

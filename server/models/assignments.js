@@ -15,4 +15,8 @@ const assignmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+assignmentSchema.index({ studentId: 1, dueDate: 1 });
+assignmentSchema.index({ studentId: 1, course: 1 });
+assignmentSchema.index({ dueDate: 1 });
+
 export const Assignment = mongoose.model('Assignment', assignmentSchema);

@@ -12,7 +12,7 @@ import { Assignment } from '../models/assignments.js';
 const getStudentAssignments = async (userId, course = null) => {
   const filter = { studentId: userId };
   if (course) filter.course = course;
-  return Assignment.find(filter);
+  return Assignment.find(filter).lean();
 };
 
 export const getGPA = async (req, res, next) => {

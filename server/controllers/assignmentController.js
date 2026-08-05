@@ -1,4 +1,5 @@
 import { Assignment } from '../models/assignments.js';
+import { validateAssignment } from '../utils/validation.js';
 
 export const listAssignments = async (req, res, next) => {
   try {
@@ -30,10 +31,15 @@ export const getAssignment = async (req, res, next) => {
 
 export const createAssignment = async (req, res, next) => {
   try {
-    const { title, description, dueDate, grade, weight, course } = req.body;
-    const studentId = req.user.role === 'student' ? req.user.userId : req.body.studentId;
+    const input = { ...req.body };
+    if (req.user.role === 'student') delete input.studentId;
+    const { errors, value } = validateAssignment(input);
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
-    if (!title || !studentId || !dueDate) {
+    const { title, description, dueDate, grade, weight, course } = value;
+    const studentId = req.user.role === 'student' ? req.user.userId : value.studentId;
+
+    if (!studentId) {
       return res.status(400).json({ error: 'title, studentId, and dueDate are required' });
     }
 
@@ -62,7 +68,9 @@ export const updateAssignment = async (req, res, next) => {
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    const { title, description, dueDate, status, grade, weight, course } = req.body;
+    const { errors, value } = validateAssignment(req.body, { partial: true });
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+    const { title, description, dueDate, status, grade, weight, course } = value;
 
     if (title !== undefined)       assignment.title = title;
     if (description !== undefined) assignment.description = description;

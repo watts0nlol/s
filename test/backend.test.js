@@ -84,13 +84,14 @@ test('registration rejects malformed identity fields and weak passwords', async 
 });
 
 test('registration succeeds when welcome email delivery fails', async (t) => {
+  const loggedErrors = [];
   t.after(() => mock.restoreAll());
   mock.method(User, 'findOne', async () => null);
   mock.method(User, 'create', async (value) => ({ ...value, _id: 'user-email-failure' }));
   mock.method(nodemailer, 'createTransport', () => ({
     sendMail: async () => { throw new Error('SMTP unavailable'); },
   }));
-  mock.method(console, 'error', () => undefined);
+  mock.method(console, 'error', (...args) => loggedErrors.push(args));
 
   const res = response();
   await register({
@@ -102,8 +103,51 @@ test('registration succeeds when welcome email delivery fails', async (t) => {
     },
   }, res, failNext);
 
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
   assert.equal(res.statusCode, 201);
   assert.equal(res.body.user.email, 'student@example.com');
+  assert.equal(typeof res.body.token, 'string');
+  assert.equal(loggedErrors.length, 1);
+  assert.equal(loggedErrors[0][0], 'Welcome email delivery failed:');
+  assert.equal(loggedErrors[0][1], 'SMTP unavailable');
+});
+
+test('registration response does not wait for slow welcome email delivery', async (t) => {
+  let finishEmail;
+  let emailStarted = false;
+  t.after(() => {
+    finishEmail?.();
+    mock.restoreAll();
+  });
+  mock.method(User, 'findOne', async () => null);
+  mock.method(User, 'create', async (value) => ({ ...value, _id: 'user-slow-email' }));
+  mock.method(nodemailer, 'createTransport', () => ({
+    sendMail: () => {
+      emailStarted = true;
+      return new Promise((resolve) => { finishEmail = resolve; });
+    },
+  }));
+
+  const res = response();
+  const registration = register({
+    body: {
+      email: 'slow-email@example.com',
+      password: 'Password123',
+      firstName: 'Slow',
+      lastName: 'Email',
+    },
+  }, res, failNext);
+
+  const completedWithoutEmail = await Promise.race([
+    registration.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+  ]);
+
+  assert.equal(completedWithoutEmail, true);
+  assert.equal(emailStarted, true);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.user.email, 'slow-email@example.com');
   assert.equal(typeof res.body.token, 'string');
 });
 

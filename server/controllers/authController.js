@@ -20,21 +20,21 @@ export const register = async (req, res, next) => {
     // Public registration is intentionally restricted to student accounts.
     const newUser = await User.create({ email, password: hashedPassword, firstName, lastName, role: 'student' });
 
-    try {
-      await sendEmail(
-        email,
-        'Welcome to Student Portal',
-        `Hello ${firstName}, your account was successfully created.`
-      );
-    } catch (emailError) {
-      console.error('Welcome email delivery failed:', emailError.message);
-    }
-
     const token = generateToken(newUser);
 
     res.status(201).json({
       token,
       user: { _id: newUser._id, email: newUser.email, firstName, lastName, role: newUser.role },
+    });
+
+    queueMicrotask(() => {
+      void sendEmail(
+        email,
+        'Welcome to Student Portal',
+        `Hello ${firstName}, your account was successfully created.`
+      ).catch((emailError) => {
+        console.error('Welcome email delivery failed:', emailError.message);
+      });
     });
   } catch (error) {
     next(error);

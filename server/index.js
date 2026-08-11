@@ -10,6 +10,7 @@ import assignmentRouter from "./routers/assignments.js";
 import userRouter from "./routers/users.js";
 import announcementRoutes from "./routers/announcements.js";
 import analyticsRouter from "./routers/analytics.js"; 
+import courseRouter from "./routers/courses.js";
 
 
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
@@ -17,6 +18,7 @@ import { connectDB } from "./db.js";
 
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { authenticateSocket, registerSocketHandlers } from "./socket.js";
 
 dotenv.config();
 
@@ -48,6 +50,7 @@ app.use("/api/users", userRouter);
 // New announcements route
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/courses", courseRouter);
 
 
 // Error handlers
@@ -55,35 +58,10 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Socket connection
+io.use(authenticateSocket);
 io.on("connection", (socket) => {
   console.log("User connected");
-
-  // join course room
-  socket.on("joinCourse", (course) => {
-    if (socket.data.currentCourse) {
-      socket.leave(socket.data.currentCourse);
-      socket.data.currentCourse = null;
-    }
-
-    if (typeof course === "string" && course.trim()) {
-      socket.data.currentCourse = course;
-      socket.join(course);
-    }
-  });
-
-  // receive message and broadcast
-  socket.on("courseMessage", (data) => {
-    io.to(data.course).emit("courseMessage", data.message);
-  });
-
-  // example notification
-  setTimeout(() => {
-    socket.emit("notification", "New assignment announcement posted!");
-  }, 5000);
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected");
-  });
+  registerSocketHandlers(io, socket);
 });
 
 const port = process.env.PORT || 8001;

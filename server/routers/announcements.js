@@ -1,22 +1,11 @@
-import express from "express";
+import express from 'express';
+import { createCourseAnnouncement, listAccessibleAnnouncements, listCourseAnnouncements } from '../controllers/announcementController.js';
+import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
-
-router.get("/", (req, res) => {
-  res.json([
-    {
-      course: "CPAN 212",
-      message: "Assignment 4 due Friday"
-    },
-    {
-      course: "CPAN 211",
-      message: "Lab submission tonight"
-    },
-    {
-      course: "Web Dev",
-      message: "Group presentation next week"
-    }
-  ]);
-});
+router.use(verifyToken);
+router.get('/', listAccessibleAnnouncements);
+router.get('/course/:courseId', listCourseAnnouncements);
+router.post('/course/:courseId', createCourseAnnouncement);
 
 export default router;

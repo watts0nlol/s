@@ -7,6 +7,7 @@ const navigation = [
   ["/dashboard", "⌂", "Dashboard"],
   ["/assignments", "✓", "Assignments"],
   ["/assignments/new", "+", "Add Assignment"],
+  ["/courses", "▤", "Courses"],
   ["/chat", "◇", "Chat"],
   ["/announcements", "○", "Announcements"],
 ];

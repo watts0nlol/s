@@ -1,55 +1,29 @@
-import { useState, useEffect } from "react";
-import { io } from "socket.io-client";
-import { API_BASE_URL } from "./config";
+import { useEffect, useState } from "react";
+import { useSocket } from "./context/SocketContext";
 
-const socket = io(API_BASE_URL);
-
-function Chat() {
+export default function Chat() {
+  const { socket, messages } = useSocket();
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [course] = useState("CPAN212");
+  const course = "CPAN212";
 
   useEffect(() => {
-    socket.emit("joinCourse", course);
+    if (socket) socket.emit("joinCourse", course);
+  }, [socket]);
 
-    socket.on("courseMessage", (msg) => {
-      setMessages((prev) => [...prev, msg]);
-    });
-
-    return () => socket.off("courseMessage");
-  }, [course]);
-
-  const sendMessage = () => {
-    if (!message) return;
-
-    socket.emit("courseMessage", {
-      course,
-      message
-    });
-
+  const sendMessage = (event) => {
+    event.preventDefault();
+    if (!message.trim() || !socket) return;
+    socket.emit("courseMessage", { course, message: message.trim() });
     setMessage("");
   };
 
   return (
-    <div>
-      <h2>Course Chat</h2>
-
-      <input
-        aria-label="Course chat message"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Type message here"
-      />
-
-      <button onClick={sendMessage}>Send</button>
-
-      <div aria-live="polite" aria-label="Course chat messages">
-        {messages.map((m, index) => (
-          <p key={index}>{m}</p>
-        ))}
+    <div className="chat-card content-card">
+      <div className="chat-heading"><div><span className="online-dot" /> Course room</div><span>{course}</span></div>
+      <div className="chat-messages" aria-live="polite" aria-label="Course chat messages">
+        {messages.length === 0 ? <div className="empty-state"><h2>No messages yet</h2><p>Start a conversation with your course community.</p></div> : messages.map((item, index) => <p className="chat-message" key={`${item}-${index}`}>{item}</p>)}
       </div>
+      <form className="chat-compose" onSubmit={sendMessage}><label className="sr-only" htmlFor="chat-message">Course chat message</label><input id="chat-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Type a message…" /><button className="primary-button" disabled={!socket}>Send</button></form>
     </div>
   );
 }
-
-export default Chat;

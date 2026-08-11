@@ -3,27 +3,27 @@ import { API_BASE_URL } from "./config";
 
 function Announcements() {
   const [announcements, setAnnouncements] = useState([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/announcements`)
       .then((res) => res.json())
       .then((data) => setAnnouncements(data))
-      .catch((err) => console.log(err));
+      .catch(() => setError("Announcements could not be loaded."));
   }, []);
 
   return (
-    <section aria-labelledby="announcement-heading">
-      <h2 id="announcement-heading">Announcement Board</h2>
-
-      {announcements.length === 0 && <p>No announcements yet</p>}
+    <div className="announcement-list" aria-live="polite">
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {!error && announcements.length === 0 && <div className="empty-state"><h2>No announcements yet</h2></div>}
 
       {announcements.map((a, index) => (
-        <div key={index}>
-          <h4>{a.course}</h4>
+        <article className="announcement-card content-card" key={index}>
+          <span className="announcement-course">{a.course}</span>
           <p>{a.message}</p>
-        </div>
+        </article>
       ))}
-    </section>
+    </div>
   );
 }
 

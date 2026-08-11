@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 
 import { login, register } from '../server/controllers/authController.js';
-import { createAssignment, listAssignments, updateAssignment } from '../server/controllers/assignmentController.js';
+import { createAssignment, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
 import { getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import logger from '../server/middleware/logger.js';
@@ -238,6 +238,96 @@ test('assignment update rejects an invalid status without saving', async (t) => 
 
   assert.equal(res.statusCode, 400);
   assert.equal(saved, false);
+});
+
+test('student can complete and reopen their own assignment', async (t) => {
+  const assignment = {
+    _id: 'assignment-owned',
+    studentId: 'student-1',
+    status: 'assigned',
+    saveCalls: 0,
+    async save() { this.saveCalls += 1; },
+  };
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findById', async () => assignment);
+
+  const completeRes = response();
+  await updateAssignmentStatus({
+    params: { id: assignment._id },
+    user: { userId: 'student-1', role: 'student' },
+    body: { status: 'completed' },
+  }, completeRes, failNext);
+
+  assert.equal(completeRes.statusCode, 200);
+  assert.equal(assignment.status, 'completed');
+
+  const reopenRes = response();
+  await updateAssignmentStatus({
+    params: { id: assignment._id },
+    user: { userId: 'student-1', role: 'student' },
+    body: { status: 'assigned' },
+  }, reopenRes, failNext);
+
+  assert.equal(reopenRes.statusCode, 200);
+  assert.equal(assignment.status, 'assigned');
+  assert.equal(assignment.saveCalls, 2);
+});
+
+test('student cannot change another student assignment status', async (t) => {
+  let saved = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findById', async () => ({
+    studentId: 'student-2',
+    status: 'assigned',
+    save: async () => { saved = true; },
+  }));
+
+  const res = response();
+  await updateAssignmentStatus({
+    params: { id: 'assignment-other' },
+    user: { userId: 'student-1', role: 'student' },
+    body: { status: 'completed' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(saved, false);
+});
+
+test('student status route rejects other assignment fields', async (t) => {
+  let lookedUp = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findById', async () => { lookedUp = true; return null; });
+
+  const res = response();
+  await updateAssignmentStatus({
+    params: { id: 'assignment-1' },
+    user: { userId: 'student-1', role: 'student' },
+    body: { status: 'completed', title: 'Changed title' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /Only the status field/);
+  assert.equal(lookedUp, false);
+});
+
+test('teacher can change any assignment status through the status route', async (t) => {
+  const assignment = {
+    studentId: 'student-2',
+    status: 'assigned',
+    async save() {},
+  };
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findById', async () => assignment);
+
+  const res = response();
+  await updateAssignmentStatus({
+    params: { id: 'assignment-2' },
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { status: 'completed' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(assignment.status, 'completed');
 });
 
 test('priority analytics returns plain assignment fields without Mongoose internals', () => {

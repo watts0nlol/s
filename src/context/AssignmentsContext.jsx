@@ -61,7 +61,24 @@ export function AssignmentsProvider({ children }) {
     setAnalyticsRefreshKey((key) => key + 1);
   }, [authHeaders, logout]);
 
-  const value = useMemo(() => ({ assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, analyticsRefreshKey }), [assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, analyticsRefreshKey]);
+  const updateAssignmentStatus = useCallback(async (id, status) => {
+    const response = await fetch(`${API_BASE_URL}/api/assignments/${id}/status`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    if (response.status === 401) {
+      logout();
+      throw new Error("Your session has expired.");
+    }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Assignment status could not be updated.");
+    setAssignments((current) => current.map((assignment) => assignment._id === id ? data : assignment));
+    setAnalyticsRefreshKey((key) => key + 1);
+    return data;
+  }, [authHeaders, logout]);
+
+  const value = useMemo(() => ({ assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, updateAssignmentStatus, analyticsRefreshKey }), [assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, updateAssignmentStatus, analyticsRefreshKey]);
   return <AssignmentsContext.Provider value={value}>{children}</AssignmentsContext.Provider>;
 }
 

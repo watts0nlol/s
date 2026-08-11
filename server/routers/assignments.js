@@ -6,6 +6,7 @@ import {
   getAssignment,
   createAssignment,
   updateAssignment,
+  updateAssignmentStatus,
   deleteAssignment,
 } from '../controllers/assignmentController.js';
 // Import middleware for authentication and role-based access control
@@ -19,6 +20,8 @@ router.get('/', listAssignments); // Route to list all assignments
 router.get('/:id', getAssignment); // Route to get a single assignment by ID 
 // (students can only access their own)
 router.post('/', createAssignment); // Route to create a new assignment (all authenticated users)
+router.patch('/:id/status', updateAssignmentStatus); // Students may update only their own status;
+// teachers and admins may update any assignment status
 router.put('/:id', requireRole('teacher', 'admin'), updateAssignment); // Route to update an
 // existing assignment (only teachers and admins)
 router.delete('/:id', requireRole('teacher', 'admin'), deleteAssignment); // Route to delete an 

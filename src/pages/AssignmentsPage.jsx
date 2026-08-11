@@ -12,13 +12,26 @@ const priorityFor = (dueDate) => {
 
 export default function AssignmentsPage() {
   const { user } = useAuth();
-  const { assignments, loading, error, deleteAssignment } = useAssignments();
+  const { assignments, loading, error, deleteAssignment, updateAssignmentStatus } = useAssignments();
   const [actionError, setActionError] = useState("");
+  const [updatingId, setUpdatingId] = useState("");
   const canDelete = user.role === "teacher" || user.role === "admin";
 
   const remove = async (id) => {
     setActionError("");
     try { await deleteAssignment(id); } catch (deleteError) { setActionError(deleteError.message); }
+  };
+
+  const toggleCompletion = async (assignment) => {
+    setActionError("");
+    setUpdatingId(assignment._id);
+    try {
+      await updateAssignmentStatus(assignment._id, assignment.status === "completed" ? "assigned" : "completed");
+    } catch (updateError) {
+      setActionError(updateError.message);
+    } finally {
+      setUpdatingId("");
+    }
   };
 
   return (
@@ -28,7 +41,9 @@ export default function AssignmentsPage() {
       <div className="assignment-grid" aria-live="polite">
         {loading ? <div className="empty-state">Loading assignments…</div> : assignments.length === 0 ? <div className="empty-state"><h2>No assignments yet</h2><p>Add your first assignment to begin tracking your workload.</p></div> : assignments.map((assignment) => {
           const priority = priorityFor(assignment.dueDate);
-          return <article className="assignment-card" key={assignment._id}><div className="card-heading"><span className={`status-pill priority-${priority.toLowerCase()}`}>{priority}</span>{assignment.status && <span className="status-text">{assignment.status}</span>}</div><h2>{assignment.title}</h2><p>{assignment.course || "Uncategorized"}</p><dl><div><dt>Due</dt><dd>{new Date(assignment.dueDate).toLocaleDateString()}</dd></div>{assignment.weight != null && <div><dt>Weight</dt><dd>{assignment.weight}%</dd></div>}</dl>{canDelete && <button className="danger-button" type="button" onClick={() => remove(assignment._id)}>Delete</button>}</article>;
+          const isOwner = user.role === "student" && assignment.studentId === user._id;
+          const completed = assignment.status === "completed";
+          return <article className={completed ? "assignment-card assignment-completed" : "assignment-card"} key={assignment._id}><div className="card-heading"><span className={`status-pill priority-${priority.toLowerCase()}`}>{priority}</span>{assignment.status && <span className="status-text">{assignment.status}</span>}</div><h2>{assignment.title}</h2><p>{assignment.course || "Uncategorized"}</p><dl><div><dt>Due</dt><dd>{new Date(assignment.dueDate).toLocaleDateString()}</dd></div>{assignment.weight != null && <div><dt>Weight</dt><dd>{assignment.weight}%</dd></div>}</dl><div className="assignment-actions">{isOwner && <button className={completed ? "secondary-button" : "completion-button"} disabled={updatingId === assignment._id} type="button" onClick={() => toggleCompletion(assignment)}>{updatingId === assignment._id ? "Updating…" : completed ? "Mark Incomplete" : "Mark Complete"}</button>}{canDelete && <button className="danger-button" type="button" onClick={() => remove(assignment._id)}>Delete</button>}</div></article>;
         })}
       </div>
     </section>

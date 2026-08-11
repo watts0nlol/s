@@ -22,7 +22,6 @@ export const getAssignment = async (req, res, next) => {
     if (req.user.role === 'student' && assignment.studentId !== req.user.userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
-
     res.json(assignment);
   } catch (error) {
     next(error);
@@ -80,6 +79,36 @@ export const updateAssignment = async (req, res, next) => {
     if (weight !== undefined)      assignment.weight = weight;
     if (course !== undefined)      assignment.course = course;
 
+    await assignment.save();
+    res.json(assignment);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateAssignmentStatus = async (req, res, next) => {
+  try {
+    const fields = Object.keys(req.body || {});
+    if (fields.length !== 1 || fields[0] !== 'status') {
+      return res.status(400).json({ error: 'Only the status field may be updated through this route' });
+    }
+
+    const { errors, value } = validateAssignment(req.body, { partial: true });
+    if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+
+    const assignment = await Assignment.findById(req.params.id);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    if (req.user.role === 'student' && assignment.studentId !== req.user.userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!['student', 'teacher', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    assignment.status = value.status;
     await assignment.save();
     res.json(assignment);
   } catch (error) {

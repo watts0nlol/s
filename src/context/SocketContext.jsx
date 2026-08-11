@@ -6,23 +6,23 @@ import { API_BASE_URL } from "../config";
 const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
-  const [socket] = useState(() => io(API_BASE_URL));
+  const [socket, setSocket] = useState(null);
   const [notification, setNotification] = useState("");
-  const [messages, setMessages] = useState([]);
 
   useEffect(() => {
+    const connection = io(API_BASE_URL);
     const handleNotification = (message) => setNotification(message);
-    const handleCourseMessage = (message) => setMessages((current) => [...current, message]);
-    socket.on("notification", handleNotification);
-    socket.on("courseMessage", handleCourseMessage);
+    connection.on("notification", handleNotification);
+    // The connection is an external resource created and destroyed by this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSocket(connection);
     return () => {
-      socket.off("notification", handleNotification);
-      socket.off("courseMessage", handleCourseMessage);
-      socket.disconnect();
+      connection.off("notification", handleNotification);
+      connection.disconnect();
     };
-  }, [socket]);
+  }, []);
 
-  const value = useMemo(() => ({ socket, notification, messages }), [socket, notification, messages]);
+  const value = useMemo(() => ({ socket, notification }), [socket, notification]);
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 }
 

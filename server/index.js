@@ -60,7 +60,15 @@ io.on("connection", (socket) => {
 
   // join course room
   socket.on("joinCourse", (course) => {
-    socket.join(course);
+    if (socket.data.currentCourse) {
+      socket.leave(socket.data.currentCourse);
+      socket.data.currentCourse = null;
+    }
+
+    if (typeof course === "string" && course.trim()) {
+      socket.data.currentCourse = course;
+      socket.join(course);
+    }
   });
 
   // receive message and broadcast

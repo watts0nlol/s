@@ -11,6 +11,7 @@ const assignmentSchema = new mongoose.Schema(
     grade:       { type: Number, min: 0, max: 100 },
     weight:      { type: Number, min: 0, max: 100 },
     course:      { type: String, trim: true, maxlength: 100 },
+    courseId:    { type: String, default: null, trim: true, maxlength: 100, index: true },
   },
   { timestamps: true }
 );

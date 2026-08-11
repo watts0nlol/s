@@ -68,6 +68,7 @@ const ASSIGNMENT_FIELDS = new Set([
   'weight',
   'course',
   'studentId',
+  'courseId',
 ]);
 
 export const validateAssignment = (body, { partial = false } = {}) => {
@@ -131,7 +132,41 @@ export const validateAssignment = (body, { partial = false } = {}) => {
     value.studentId = normalizeRequiredString(body.studentId, 'studentId', 100, errors);
   }
 
+  if (body.courseId !== undefined) {
+    if (body.courseId === null || body.courseId === '') value.courseId = null;
+    else value.courseId = normalizeRequiredString(body.courseId, 'courseId', 100, errors);
+  }
+
   if (partial && Object.keys(body).length === 0) errors.push('At least one field is required');
 
   return { errors, value };
+};
+
+export const validateCourse = (body) => {
+  if (!isRecord(body)) return { errors: ['Request body must be a JSON object'] };
+  const errors = [];
+  const allowed = new Set(['name', 'code', 'teacherId']);
+  const unknown = Object.keys(body).filter((field) => !allowed.has(field));
+  if (unknown.length) errors.push(`Unknown field(s): ${unknown.join(', ')}`);
+  const name = normalizeRequiredString(body.name, 'name', 200, errors);
+  const code = normalizeRequiredString(body.code, 'code', 50, errors);
+  let teacherId;
+  if (body.teacherId !== undefined) teacherId = normalizeRequiredString(body.teacherId, 'teacherId', 100, errors);
+  return { errors, value: { name, code, teacherId } };
+};
+
+export const validateJoinCode = (body) => {
+  if (!isRecord(body)) return { errors: ['Request body must be a JSON object'] };
+  const errors = [];
+  const joinCode = normalizeRequiredString(body.joinCode, 'joinCode', 12, errors)?.toUpperCase();
+  return { errors, value: { joinCode } };
+};
+
+export const validateAnnouncement = (body) => {
+  if (!isRecord(body)) return { errors: ['Request body must be a JSON object'] };
+  const errors = [];
+  const unknown = Object.keys(body).filter((field) => field !== 'message');
+  if (unknown.length) errors.push(`Unknown field(s): ${unknown.join(', ')}`);
+  const message = normalizeRequiredString(body.message, 'message', 2000, errors);
+  return { errors, value: { message } };
 };

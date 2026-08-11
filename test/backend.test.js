@@ -6,13 +6,19 @@ import nodemailer from 'nodemailer';
 
 import { login, register } from '../server/controllers/authController.js';
 import { createAssignment, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
+import { createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
+import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
 import { getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import logger from '../server/middleware/logger.js';
 import { Assignment } from '../server/models/assignments.js';
+import { Announcement } from '../server/models/announcements.js';
+import { Course } from '../server/models/courses.js';
 import { User } from '../server/models/users.js';
 import { calculateGPA, prioritizeAssignments } from '../server/utils/analytics.js';
-import { validateAssignment } from '../server/utils/validation.js';
+import { canAccessCourse } from '../server/utils/courseAccess.js';
+import { authenticateSocket, authorizeSocketCourse, registerSocketHandlers } from '../server/socket.js';
+import { validateAssignment, validateCourse } from '../server/utils/validation.js';
 
 process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-backend-tests';
 
@@ -422,4 +428,239 @@ test('lean assignment listing preserves the existing filter, sort, and response'
   assert.deepEqual(sort, { dueDate: 1 });
   assert.equal(leanCalled, true);
   assert.deepEqual(res.body, assignments);
+});
+
+test('course validation rejects missing and unexpected fields', () => {
+  const { errors } = validateCourse({ name: ' ', code: 42, semester: 'Fall' });
+  assert.ok(errors.some((error) => error.includes('name is required')));
+  assert.ok(errors.some((error) => error.includes('code must be a string')));
+  assert.ok(errors.some((error) => error.includes('Unknown field(s): semester')));
+});
+
+test('teacher creates a course owned by their authenticated identity', async (t) => {
+  let created;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'create', async (value) => {
+    created = { ...value, _id: 'course-1' };
+    return created;
+  });
+
+  const res = response();
+  await createCourse({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { name: 'Web Development', code: 'CPAN 366', teacherId: 'teacher-other' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(created.teacherId, 'teacher-1');
+  assert.match(created.joinCode, /^[A-Z0-9]{6,8}$/);
+  assert.equal(res.body.joinCode, created.joinCode);
+});
+
+test('student course listing is enrollment-scoped and hides join codes', async (t) => {
+  let filter;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'find', (receivedFilter) => {
+    filter = receivedFilter;
+    return { sort: () => ({ lean: async () => [{ _id: 'course-1', code: 'CPAN 366', joinCode: 'SECRET', studentIds: ['student-1'] }] }) };
+  });
+
+  const res = response();
+  await listCourses({ user: { userId: 'student-1', role: 'student' } }, res, failNext);
+
+  assert.deepEqual(filter, { studentIds: 'student-1', active: true });
+  assert.equal(res.body.length, 1);
+  assert.equal(Object.hasOwn(res.body[0], 'joinCode'), false);
+  assert.equal(Object.hasOwn(res.body[0], 'studentIds'), false);
+  assert.equal(res.body[0].enrollmentCount, 1);
+});
+
+test('student joins an active course idempotently without receiving its join code', async (t) => {
+  let query;
+  let update;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findOneAndUpdate', async (receivedQuery, receivedUpdate) => {
+    query = receivedQuery;
+    update = receivedUpdate;
+    return { _id: 'course-1', code: 'CPAN 366', joinCode: 'JOIN123', studentIds: ['student-1'] };
+  });
+
+  const res = response();
+  await joinCourse({ user: { userId: 'student-1', role: 'student' }, body: { joinCode: ' join123 ' } }, res, failNext);
+
+  assert.deepEqual(query, { joinCode: 'JOIN123', active: true });
+  assert.deepEqual(update, { $addToSet: { studentIds: 'student-1' } });
+  assert.equal(Object.hasOwn(res.body, 'joinCode'), false);
+});
+
+test('invalid join codes return not found without enrolling a student', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findOneAndUpdate', async () => null);
+  const res = response();
+  await joinCourse({ user: { userId: 'student-1', role: 'student' }, body: { joinCode: 'NOCOURSE' } }, res, failNext);
+  assert.equal(res.statusCode, 404);
+});
+
+test('teacher listings are ownership-scoped while admins list all courses', async (t) => {
+  const filters = [];
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'find', (filter) => {
+    filters.push(filter);
+    return { sort: () => ({ lean: async () => [] }) };
+  });
+  await listCourses({ user: { userId: 'teacher-1', role: 'teacher' } }, response(), failNext);
+  await listCourses({ user: { userId: 'admin-1', role: 'admin' } }, response(), failNext);
+  assert.deepEqual(filters, [{ teacherId: 'teacher-1' }, {}]);
+});
+
+test('admin can create a course assigned to an approved existing teacher id', async (t) => {
+  let created;
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findOne', () => ({ lean: async () => ({ _id: 'teacher-1', role: 'teacher' }) }));
+  mock.method(Course, 'create', async (value) => { created = { ...value, _id: 'course-admin' }; return created; });
+  const res = response();
+  await createCourse({
+    user: { userId: 'admin-1', role: 'admin' },
+    body: { name: 'Security', code: 'CPAN 400', teacherId: 'teacher-1' },
+  }, res, failNext);
+  assert.equal(res.statusCode, 201);
+  assert.equal(created.teacherId, 'teacher-1');
+});
+
+test('course access distinguishes enrollment, ownership, and admin access', () => {
+  const course = { teacherId: 'teacher-1', studentIds: ['student-1'] };
+  assert.equal(canAccessCourse(course, { userId: 'student-1', role: 'student' }), true);
+  assert.equal(canAccessCourse(course, { userId: 'student-2', role: 'student' }), false);
+  assert.equal(canAccessCourse(course, { userId: 'teacher-1', role: 'teacher' }), true);
+  assert.equal(canAccessCourse(course, { userId: 'teacher-2', role: 'teacher' }), false);
+  assert.equal(canAccessCourse(course, { userId: 'admin-1', role: 'admin' }), true);
+});
+
+test('linked assignment derives its legacy course string and preserves courseId', async (t) => {
+  let created;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', code: 'CPAN 366', teacherId: 'teacher-1', studentIds: ['student-1'] }) }));
+  mock.method(Assignment, 'create', async (value) => { created = { ...value, _id: 'assignment-linked' }; return created; });
+
+  const res = response();
+  await createAssignment({
+    user: { userId: 'student-1', role: 'student' },
+    body: { title: 'Linked work', dueDate: '2026-09-01', courseId: 'course-1', course: 'Client value ignored' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(created.courseId, 'course-1');
+  assert.equal(created.course, 'CPAN 366');
+});
+
+test('legacy assignment remains valid without courseId', async (t) => {
+  let created;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'create', async (value) => { created = value; return value; });
+
+  const res = response();
+  await createAssignment({
+    user: { userId: 'student-1', role: 'student' },
+    body: { title: 'Legacy work', dueDate: '2026-09-01', course: 'Legacy 101' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(created.course, 'Legacy 101');
+  assert.equal(created.courseId, null);
+});
+
+test('student cannot link an assignment to a course they are not enrolled in', async (t) => {
+  let created = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1', studentIds: [] }) }));
+  mock.method(Assignment, 'create', async () => { created = true; });
+
+  await assert.rejects(() => createAssignment({
+    user: { userId: 'student-1', role: 'student' },
+    body: { title: 'Blocked', dueDate: '2026-09-01', courseId: 'course-1' },
+  }, response(), failNext), /Access denied/);
+  assert.equal(created, false);
+});
+
+test('course announcements enforce membership for reads and ownership for writes', async (t) => {
+  const course = { _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] };
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => course }));
+  mock.method(Announcement, 'find', () => ({ sort: () => ({ lean: async () => [{ _id: 'announcement-1', courseId: 'course-1', message: 'Welcome' }] }) }));
+  mock.method(Announcement, 'create', async (value) => ({ ...value, _id: 'announcement-2' }));
+
+  const studentRes = response();
+  await listCourseAnnouncements({ params: { courseId: 'course-1' }, user: { userId: 'student-1', role: 'student' } }, studentRes, failNext);
+  assert.equal(studentRes.statusCode, 200);
+  assert.equal(studentRes.body[0].message, 'Welcome');
+
+  const deniedRes = response();
+  await listCourseAnnouncements({ params: { courseId: 'course-1' }, user: { userId: 'student-2', role: 'student' } }, deniedRes, failNext);
+  assert.equal(deniedRes.statusCode, 403);
+
+  const postRes = response();
+  await createCourseAnnouncement({ params: { courseId: 'course-1' }, user: { userId: 'teacher-1', role: 'teacher' }, body: { message: ' Exam Friday ' } }, postRes, failNext);
+  assert.equal(postRes.statusCode, 201);
+  assert.equal(postRes.body.message, 'Exam Friday');
+
+  const studentPostRes = response();
+  await createCourseAnnouncement({ params: { courseId: 'course-1' }, user: { userId: 'student-1', role: 'student' }, body: { message: 'Not allowed' } }, studentPostRes, failNext);
+  assert.equal(studentPostRes.statusCode, 403);
+
+  const unrelatedTeacherRes = response();
+  await createCourseAnnouncement({ params: { courseId: 'course-1' }, user: { userId: 'teacher-2', role: 'teacher' }, body: { message: 'Not allowed' } }, unrelatedTeacherRes, failNext);
+  assert.equal(unrelatedTeacherRes.statusCode, 403);
+
+  const adminRes = response();
+  await createCourseAnnouncement({ params: { courseId: 'course-1' }, user: { userId: 'admin-1', role: 'admin' }, body: { message: 'Admin notice' } }, adminRes, failNext);
+  assert.equal(adminRes.statusCode, 201);
+});
+
+test('Socket.IO authentication accepts valid JWTs and course authorization uses enrollment', async (t) => {
+  const token = generateToken({ _id: 'student-1', email: 's@example.com', firstName: 'S', lastName: 'One', role: 'student' });
+  const socket = { handshake: { auth: { token } }, data: {} };
+  let authError;
+  authenticateSocket(socket, (error) => { authError = error; });
+  assert.equal(authError, undefined);
+  assert.equal(socket.data.user.userId, 'student-1');
+
+  const invalidSocket = { handshake: { auth: { token: 'invalid' } }, data: {} };
+  authenticateSocket(invalidSocket, (error) => { authError = error; });
+  assert.match(authError.message, /Invalid or expired/);
+
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] }) }));
+  assert.ok(await authorizeSocketCourse('course-1', { userId: 'student-1', role: 'student' }));
+  assert.equal(await authorizeSocketCourse('course-1', { userId: 'student-2', role: 'student' }), null);
+});
+
+test('Socket.IO handlers join only authorized rooms and isolate message broadcasts', async (t) => {
+  const handlers = {};
+  const joined = [];
+  const left = [];
+  const broadcasts = [];
+  const socket = {
+    data: { user: { userId: 'student-1', role: 'student' } },
+    on(event, handler) { handlers[event] = handler; },
+    join(room) { joined.push(room); },
+    leave(room) { left.push(room); },
+    emit() {},
+  };
+  const io = { to(room) { return { emit(event, message) { broadcasts.push({ room, event, message }); } }; } };
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', (id) => ({ lean: async () => ({ _id: id, teacherId: 'teacher-1', studentIds: id === 'course-1' ? ['student-1'] : [] }) }));
+
+  registerSocketHandlers(io, socket);
+  await handlers.joinCourse('course-2');
+  assert.deepEqual(joined, []);
+  await handlers.joinCourse('course-1');
+  assert.deepEqual(joined, ['course:course-1']);
+
+  handlers.courseMessage({ course: 'course-2', message: 'wrong room' });
+  handlers.courseMessage({ course: 'course-1', message: ' hello ' });
+  assert.deepEqual(broadcasts, [{ room: 'course:course-1', event: 'courseMessage', message: 'hello' }]);
+
+  await handlers.joinCourse(null);
+  assert.deepEqual(left, ['course:course-1']);
+  handlers.disconnect();
 });

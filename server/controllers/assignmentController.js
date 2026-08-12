@@ -55,6 +55,7 @@ export const createAssignment = async (req, res, next) => {
   try {
     const input = { ...req.body };
     if (req.user.role === 'student') delete input.studentId;
+    if (req.user.role !== 'student' && input.courseId) delete input.studentId;
     const { errors, value } = validateAssignment(input);
     if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 

@@ -1,5 +1,6 @@
 // server/middleware/auth.js
 import jwt from 'jsonwebtoken'; // Import the jsonwebtoken library for handling JWT tokens
+import { User } from '../models/users.js';
 
 // Function to generate JWT token with safe user claims
 export const generateToken = (user) => {
@@ -21,7 +22,7 @@ export const generateToken = (user) => {
 };
 
 // Middleware to verify the JWT token
-export const verifyToken = (req, res, next) => {
+export const verifyToken = async (req, res, next) => {
   const authHeader = req.header('Authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
 
@@ -31,7 +32,17 @@ export const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    const currentUser = await User.findById(decoded.userId, '-password').lean();
+    if (!currentUser) {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+    req.user = {
+      userId: String(currentUser._id),
+      email: currentUser.email,
+      firstName: currentUser.firstName,
+      lastName: currentUser.lastName,
+      role: currentUser.role,
+    };
     next();
   } catch {
     return res.status(401).json({ message: 'Invalid or expired token' });

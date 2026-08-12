@@ -36,6 +36,7 @@ function LayoutContent() {
               <span aria-hidden="true">{icon}</span>{label}
             </NavLink>
           ))}
+          {user.role === "admin" && <NavLink to="/admin/users" onClick={() => setMenuOpen(false)} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span aria-hidden="true">⚙</span>User Management</NavLink>}
         </nav>
         <div className="sidebar-account">
           <div className="user-avatar" aria-hidden="true">{user.firstName?.[0]}{user.lastName?.[0]}</div>

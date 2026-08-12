@@ -8,6 +8,7 @@ import { login, register } from '../server/controllers/authController.js';
 import { createAssignment, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
 import { createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
 import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
+import { listUsers, updateUserRole } from '../server/controllers/userController.js';
 import { getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import logger from '../server/middleware/logger.js';
@@ -18,7 +19,7 @@ import { User } from '../server/models/users.js';
 import { calculateGPA, prioritizeAssignments } from '../server/utils/analytics.js';
 import { canAccessCourse } from '../server/utils/courseAccess.js';
 import { authenticateSocket, authorizeSocketCourse, registerSocketHandlers } from '../server/socket.js';
-import { validateAssignment, validateCourse } from '../server/utils/validation.js';
+import { validateAssignment, validateCourse, validateUserRoleUpdate } from '../server/utils/validation.js';
 
 process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-backend-tests';
 
@@ -81,6 +82,19 @@ test('registration rejects malformed identity fields and weak passwords', async 
   assert.match(res.body.error, /email must be valid/);
   assert.match(res.body.error, /password must be at least 8 characters/);
   assert.match(res.body.error, /firstName must be a string/);
+});
+
+test('public registration ignores a requested teacher role', async (t) => {
+  let createdUser;
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findOne', async () => null);
+  mock.method(User, 'create', async (value) => { createdUser = { ...value, _id: 'student-only' }; return createdUser; });
+  mock.method(nodemailer, 'createTransport', () => ({ sendMail: async () => undefined }));
+  const res = response();
+  await register({ body: { email: 'teacher-request@example.com', password: 'Password123', firstName: 'Still', lastName: 'Student', role: 'teacher' } }, res, failNext);
+  assert.equal(res.statusCode, 201);
+  assert.equal(createdUser.role, 'student');
+  assert.equal(res.body.user.role, 'student');
 });
 
 test('registration succeeds when welcome email delivery fails', async (t) => {
@@ -207,7 +221,7 @@ test('login rejects invalid input before querying the database', async () => {
   assert.match(res.body.error, /password is required and must be a string/);
 });
 
-test('JWT middleware accepts valid tokens, rejects invalid tokens, and enforces roles', () => {
+test('JWT middleware accepts valid tokens, rejects invalid tokens, and enforces current database roles', async (t) => {
   const token = generateToken({
     _id: 'user-3',
     email: 'student@example.com',
@@ -218,17 +232,41 @@ test('JWT middleware accepts valid tokens, rejects invalid tokens, and enforces 
 
   const validReq = { header: () => `Bearer ${token}` };
   let continued = false;
-  verifyToken(validReq, response(), () => { continued = true; });
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', () => ({ lean: async () => ({
+    _id: 'user-3', email: 'student@example.com', firstName: 'JWT', lastName: 'Student', role: 'teacher',
+  }) }));
+  await verifyToken(validReq, response(), () => { continued = true; });
   assert.equal(continued, true);
   assert.equal(validReq.user.userId, 'user-3');
+  assert.equal(validReq.user.role, 'teacher');
+  let teacherContinued = false;
+  requireRole('teacher')(validReq, response(), () => { teacherContinued = true; });
+  assert.equal(teacherContinued, true);
 
   const invalidRes = response();
-  verifyToken({ header: () => 'Bearer invalid' }, invalidRes, () => assert.fail('must not continue'));
+  await verifyToken({ header: () => 'Bearer invalid' }, invalidRes, () => assert.fail('must not continue'));
   assert.equal(invalidRes.statusCode, 401);
 
   const forbiddenRes = response();
   requireRole('admin')(validReq, forbiddenRes, () => assert.fail('must not continue'));
   assert.equal(forbiddenRes.statusCode, 403);
+});
+
+test('a stale teacher JWT loses teacher authorization after database demotion', async (t) => {
+  const token = generateToken({
+    _id: 'demoted-user', email: 'demoted@example.com', firstName: 'Former', lastName: 'Teacher', role: 'teacher',
+  });
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', () => ({ lean: async () => ({
+    _id: 'demoted-user', email: 'demoted@example.com', firstName: 'Former', lastName: 'Teacher', role: 'student',
+  }) }));
+  const req = { header: () => `Bearer ${token}` };
+  await verifyToken(req, response(), () => undefined);
+  const res = response();
+  requireRole('teacher')(req, res, () => assert.fail('demoted user must not retain teacher access'));
+  assert.equal(req.user.role, 'student');
+  assert.equal(res.statusCode, 403);
 });
 
 test('assignment validation rejects invalid domain values', () => {
@@ -580,6 +618,75 @@ test('course access distinguishes enrollment, ownership, and admin access', () =
   assert.equal(canAccessCourse(course, { userId: 'admin-1', role: 'admin' }), true);
 });
 
+test('admin user listing excludes password hashes', async (t) => {
+  const users = [{ _id: 'student-1', email: 's@example.com', role: 'student' }];
+  let projection;
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'find', (_filter, receivedProjection) => {
+    projection = receivedProjection;
+    return { lean: async () => users };
+  });
+  const res = response();
+  await listUsers({ user: { userId: 'admin-1', role: 'admin' } }, res, failNext);
+  assert.equal(projection, '-password');
+  assert.deepEqual(res.body, users);
+});
+
+test('role update validation allows only student and teacher role changes', () => {
+  assert.deepEqual(validateUserRoleUpdate({ role: 'teacher' }).errors, []);
+  assert.ok(validateUserRoleUpdate({ role: 'admin' }).errors.some((error) => error.includes('student or teacher')));
+  assert.ok(validateUserRoleUpdate({ role: 'teacher', email: 'changed@example.com' }).errors.some((error) => error.includes('Only the role field')));
+});
+
+test('admin can promote a student to teacher without changing other fields', async (t) => {
+  const target = { _id: 'student-1', email: 's@example.com', firstName: 'Test', lastName: 'Student', role: 'student', password: 'secret', async save() {} };
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', async () => target);
+  mock.method(console, 'log', () => undefined);
+  const res = response();
+  await updateUserRole({ params: { id: 'student-1' }, user: { userId: 'admin-1', role: 'admin' }, body: { role: 'teacher' } }, res, failNext);
+  assert.equal(res.statusCode, 200);
+  assert.equal(target.role, 'teacher');
+  assert.equal(res.body.user.role, 'teacher');
+  assert.equal(Object.hasOwn(res.body.user, 'password'), false);
+});
+
+test('admin can demote a teacher who owns no courses', async (t) => {
+  const target = { _id: 'teacher-1', email: 't@example.com', firstName: 'Test', lastName: 'Teacher', role: 'teacher', async save() {} };
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', async () => target);
+  mock.method(Course, 'exists', async () => null);
+  mock.method(console, 'log', () => undefined);
+  const res = response();
+  await updateUserRole({ params: { id: 'teacher-1' }, user: { userId: 'admin-1', role: 'admin' }, body: { role: 'student' } }, res, failNext);
+  assert.equal(res.statusCode, 200);
+  assert.equal(target.role, 'student');
+});
+
+test('teacher demotion is blocked while the teacher owns a course', async (t) => {
+  let saved = false;
+  const target = { _id: 'teacher-1', role: 'teacher', async save() { saved = true; } };
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', async () => target);
+  mock.method(Course, 'exists', async () => ({ _id: 'course-1' }));
+  const res = response();
+  await updateUserRole({ params: { id: 'teacher-1' }, user: { userId: 'admin-1', role: 'admin' }, body: { role: 'student' } }, res, failNext);
+  assert.equal(res.statusCode, 409);
+  assert.equal(saved, false);
+});
+
+test('admin role workflow blocks self changes and editing admin accounts', async (t) => {
+  t.after(() => mock.restoreAll());
+  const selfRes = response();
+  await updateUserRole({ params: { id: 'admin-1' }, user: { userId: 'admin-1', role: 'admin' }, body: { role: 'student' } }, selfRes, failNext);
+  assert.equal(selfRes.statusCode, 403);
+
+  mock.method(User, 'findById', async () => ({ _id: 'admin-2', role: 'admin' }));
+  const otherAdminRes = response();
+  await updateUserRole({ params: { id: 'admin-2' }, user: { userId: 'admin-1', role: 'admin' }, body: { role: 'student' } }, otherAdminRes, failNext);
+  assert.equal(otherAdminRes.statusCode, 403);
+});
+
 test('linked assignment derives its legacy course string and preserves courseId', async (t) => {
   let created;
   t.after(() => mock.restoreAll());
@@ -661,21 +768,26 @@ test('course announcements enforce membership for reads and ownership for writes
 });
 
 test('Socket.IO authentication accepts valid JWTs and course authorization uses enrollment', async (t) => {
-  const token = generateToken({ _id: 'student-1', email: 's@example.com', firstName: 'S', lastName: 'One', role: 'student' });
+  t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', (id) => ({ lean: async () => ({ _id: id, email: 's@example.com', firstName: 'S', lastName: 'One', role: 'student' }) }));
+  const token = generateToken({ _id: 'student-1', email: 's@example.com', firstName: 'S', lastName: 'One', role: 'teacher' });
   const socket = { handshake: { auth: { token } }, data: {} };
   let authError;
-  authenticateSocket(socket, (error) => { authError = error; });
+  await authenticateSocket(socket, (error) => { authError = error; });
   assert.equal(authError, undefined);
   assert.equal(socket.data.user.userId, 'student-1');
+  assert.equal(socket.data.user.role, 'student');
 
   const invalidSocket = { handshake: { auth: { token: 'invalid' } }, data: {} };
-  authenticateSocket(invalidSocket, (error) => { authError = error; });
+  await authenticateSocket(invalidSocket, (error) => { authError = error; });
   assert.match(authError.message, /Invalid or expired/);
 
-  t.after(() => mock.restoreAll());
-  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] }) }));
+  mock.method(Course, 'findById', (id) => ({ lean: async () => id === 'owned-by-stale-teacher'
+    ? { _id: id, teacherId: 'student-1', studentIds: [] }
+    : { _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] } }));
   assert.ok(await authorizeSocketCourse('course-1', { userId: 'student-1', role: 'student' }));
   assert.equal(await authorizeSocketCourse('course-1', { userId: 'student-2', role: 'student' }), null);
+  assert.equal(await authorizeSocketCourse('owned-by-stale-teacher', { userId: 'student-1', role: 'teacher' }), null);
 });
 
 test('Socket.IO handlers join only authorized rooms and isolate message broadcasts', async (t) => {
@@ -692,6 +804,7 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
   };
   const io = { to(room) { return { emit(event, message) { broadcasts.push({ room, event, message }); } }; } };
   t.after(() => mock.restoreAll());
+  mock.method(User, 'findById', (id) => ({ lean: async () => ({ _id: id, role: 'student' }) }));
   mock.method(Course, 'findById', (id) => ({ lean: async () => ({ _id: id, teacherId: 'teacher-1', studentIds: id === 'course-1' ? ['student-1'] : [] }) }));
 
   registerSocketHandlers(io, socket);
@@ -700,8 +813,8 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
   await handlers.joinCourse('course-1');
   assert.deepEqual(joined, ['course:course-1']);
 
-  handlers.courseMessage({ course: 'course-2', message: 'wrong room' });
-  handlers.courseMessage({ course: 'course-1', message: ' hello ' });
+  await handlers.courseMessage({ course: 'course-2', message: 'wrong room' });
+  await handlers.courseMessage({ course: 'course-1', message: ' hello ' });
   assert.deepEqual(broadcasts, [{ room: 'course:course-1', event: 'courseMessage', message: 'hello' }]);
 
   await handlers.joinCourse(null);

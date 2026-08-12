@@ -170,3 +170,16 @@ export const validateAnnouncement = (body) => {
   const message = normalizeRequiredString(body.message, 'message', 2000, errors);
   return { errors, value: { message } };
 };
+
+export const validateUserRoleUpdate = (body) => {
+  if (!isRecord(body)) return { errors: ['Request body must be a JSON object'] };
+  const errors = [];
+  const fields = Object.keys(body);
+  if (fields.length !== 1 || fields[0] !== 'role') {
+    errors.push('Only the role field may be updated');
+  }
+  if (typeof body.role !== 'string' || !['student', 'teacher'].includes(body.role)) {
+    errors.push('role must be student or teacher');
+  }
+  return { errors, value: { role: body.role } };
+};

@@ -1,12 +1,57 @@
 import crypto from 'node:crypto';
 import { Course } from '../models/courses.js';
 import { User } from '../models/users.js';
+import { Assignment } from '../models/assignments.js';
 import { canAccessCourse, publicCourse } from '../utils/courseAccess.js';
 import { validateCourse, validateJoinCode } from '../utils/validation.js';
 
 const createJoinCode = () => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return [...crypto.randomBytes(8)].map((byte) => alphabet[byte % alphabet.length]).join('');
+};
+
+export const backfillCourseAssignments = async (course, studentId) => {
+  const courseAssignments = await Assignment.find({ courseId: String(course._id) }).lean();
+  const distributedTemplates = new Map();
+  const existingSignatures = new Set();
+  const legacyGroups = new Map();
+
+  courseAssignments.forEach((assignment) => {
+    const legacySignature = [assignment.title, new Date(assignment.dueDate).toISOString(), assignment.createdBy].join('|');
+    const signature = assignment.distributionId || `legacy:${legacySignature}`;
+    if (String(assignment.studentId) === String(studentId)) existingSignatures.add(signature);
+    if (assignment.distributionId && !distributedTemplates.has(signature)) {
+      distributedTemplates.set(signature, assignment);
+    }
+    if (!assignment.distributionId && assignment.createdBy && String(assignment.createdBy) !== String(assignment.studentId)) {
+      const group = legacyGroups.get(signature) || [];
+      group.push(assignment);
+      legacyGroups.set(signature, group);
+    }
+  });
+
+  legacyGroups.forEach((group, signature) => {
+    const recipients = new Set(group.map((assignment) => String(assignment.studentId)));
+    if (recipients.size > 1) distributedTemplates.set(signature, group[0]);
+  });
+
+  const missing = [...distributedTemplates.entries()]
+    .filter(([signature]) => !existingSignatures.has(signature))
+    .map(([, template]) => ({
+      title: template.title,
+      description: template.description || '',
+      studentId: String(studentId),
+      dueDate: template.dueDate,
+      createdBy: template.createdBy,
+      status: 'assigned',
+      weight: template.weight,
+      course: template.course,
+      courseId: String(course._id),
+      distributionId: template.distributionId || null,
+    }));
+
+  if (missing.length > 0) await Assignment.insertMany(missing);
+  return missing.length;
 };
 
 export const listCourses = async (req, res, next) => {
@@ -60,6 +105,7 @@ export const joinCourse = async (req, res, next) => {
       { new: true }
     );
     if (!course) return res.status(404).json({ error: 'Active course not found for that join code' });
+    await backfillCourseAssignments(course, req.user.userId);
     res.json(publicCourse(course, req.user));
   } catch (error) { next(error); }
 };

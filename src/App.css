@@ -107,3 +107,8 @@
 .chat-message header strong { color: #312e81; font-size: 11px; }
 .chat-message header span { color: #6366f1; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .chat-message p { margin: 0; }
+.distribution-progress { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
+.distribution-progress strong { color: var(--ink); }
+.group-delete-control { align-items: flex-start; display: flex; flex-direction: column; gap: 5px; }
+.group-delete-control .danger-button:disabled { cursor: not-allowed; opacity: .55; }
+.group-delete-control small { color: var(--muted); font-size: 10px; }

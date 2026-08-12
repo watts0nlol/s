@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 
 import { login, register } from '../server/controllers/authController.js';
-import { createAssignment, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
+import { createAssignment, deleteAssignmentDistribution, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
 import { backfillCourseAssignments, createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
 import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
 import { listCourseMessages } from '../server/controllers/courseMessageController.js';
@@ -418,6 +418,75 @@ test('teacher can change any assignment status through the status route', async 
 
   assert.equal(res.statusCode, 200);
   assert.equal(assignment.status, 'completed');
+});
+
+test('course owner deletes every assignment in one distribution only', async (t) => {
+  let deleteFilter;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findOne', () => ({ lean: async () => ({ distributionId: 'distribution-1', courseId: 'course-1' }) }));
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1' }) }));
+  mock.method(Assignment, 'deleteMany', async (filter) => {
+    deleteFilter = filter;
+    return { deletedCount: 3 };
+  });
+
+  const res = response();
+  await deleteAssignmentDistribution({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    params: { distributionId: 'distribution-1' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(deleteFilter, { distributionId: 'distribution-1' });
+  assert.deepEqual(res.body, { distributionId: 'distribution-1', deletedCount: 3 });
+});
+
+test('teacher cannot delete a distribution from a course they do not manage', async (t) => {
+  let deleteCalled = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findOne', () => ({ lean: async () => ({ distributionId: 'distribution-1', courseId: 'course-1' }) }));
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-other' }) }));
+  mock.method(Assignment, 'deleteMany', async () => { deleteCalled = true; });
+
+  const res = response();
+  await deleteAssignmentDistribution({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    params: { distributionId: 'distribution-1' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(deleteCalled, false);
+});
+
+test('admin can delete a linked assignment distribution', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findOne', () => ({ lean: async () => ({ distributionId: 'distribution-1', courseId: 'course-1' }) }));
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1' }) }));
+  mock.method(Assignment, 'deleteMany', async () => ({ deletedCount: 2 }));
+
+  const res = response();
+  await deleteAssignmentDistribution({
+    user: { userId: 'admin-1', role: 'admin' },
+    params: { distributionId: 'distribution-1' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.deletedCount, 2);
+});
+
+test('student is denied full-distribution deletion before any records are read', async (t) => {
+  let findCalled = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'findOne', () => { findCalled = true; });
+
+  const res = response();
+  await deleteAssignmentDistribution({
+    user: { userId: 'student-1', role: 'student' },
+    params: { distributionId: 'distribution-1' },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(findCalled, false);
 });
 
 test('priority analytics returns plain assignment fields without Mongoose internals', () => {

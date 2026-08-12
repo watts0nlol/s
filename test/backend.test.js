@@ -10,7 +10,7 @@ import { backfillCourseAssignments, createCourse, joinCourse, listCourses } from
 import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
 import { listCourseMessages } from '../server/controllers/courseMessageController.js';
 import { listUsers, updateUserRole } from '../server/controllers/userController.js';
-import { getDashboard, getGPA } from '../server/controllers/analyticsController.js';
+import { buildTeacherDashboard, getDashboard, getGPA, getTeacherDashboard } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import logger from '../server/middleware/logger.js';
 import { Assignment } from '../server/models/assignments.js';
@@ -937,6 +937,83 @@ test('dashboard course completion uses completed assignment count, not grade wei
   assert.equal(res.body.courses[0].totalAssignments, 3);
   assert.equal(res.body.courses[0].completedAssignments, 2);
   assert.equal(res.body.courses[0].completionPercent, 67);
+});
+
+test('teacher dashboard groups distributions, deduplicates students, and calculates copy completion', () => {
+  const now = new Date('2026-08-12T12:00:00Z');
+  const courses = [
+    { _id: 'course-1', code: 'CPAN 370', name: 'Software Systems', studentIds: ['student-1', 'student-2'] },
+    { _id: 'course-2', code: 'CPAN 371', name: 'Web Applications', studentIds: ['student-2', 'student-3'] },
+  ];
+  const shared = { title: 'Final Project', course: 'CPAN 370', courseId: 'course-1', distributionId: 'distribution-1', dueDate: new Date('2026-08-15'), weight: 25 };
+  const assignments = [
+    { ...shared, studentId: 'student-1', status: 'completed' },
+    { ...shared, studentId: 'student-2', status: 'assigned' },
+    { title: 'Old Work', course: 'CPAN 371', courseId: 'course-2', distributionId: 'distribution-2', dueDate: new Date('2026-08-01'), studentId: 'student-2', status: 'completed' },
+    { title: 'Individual', courseId: 'course-1', dueDate: new Date('2026-08-14'), studentId: 'student-1', status: 'assigned' },
+  ];
+
+  const result = buildTeacherDashboard(courses, assignments, now);
+
+  assert.deepEqual(result.summary, {
+    coursesTaught: 2,
+    uniqueStudents: 3,
+    activeAssignments: 1,
+    overallCompletionPercent: 67,
+    completedCopies: 2,
+    distributedCopies: 3,
+  });
+  assert.equal(result.upcomingAssignments.length, 1);
+  assert.deepEqual(
+    result.upcomingAssignments.map(({ distributionId, assignedCount, completedCount, pendingCount }) => ({ distributionId, assignedCount, completedCount, pendingCount })),
+    [{ distributionId: 'distribution-1', assignedCount: 2, completedCount: 1, pendingCount: 1 }],
+  );
+  assert.equal(result.needsAttention[0].attentionType, 'approaching');
+  assert.deepEqual(result.courses.map(({ code, studentCount, activeAssignmentCount, completionPercent }) => ({ code, studentCount, activeAssignmentCount, completionPercent })), [
+    { code: 'CPAN 370', studentCount: 2, activeAssignmentCount: 1, completionPercent: 50 },
+    { code: 'CPAN 371', studentCount: 2, activeAssignmentCount: 0, completionPercent: 100 },
+  ]);
+});
+
+test('teacher dashboard flags overdue distributions with pending students', () => {
+  const result = buildTeacherDashboard(
+    [{ _id: 'course-1', code: 'CPAN 370', name: 'Systems', studentIds: [] }],
+    [{ title: 'Late Project', courseId: 'course-1', distributionId: 'distribution-late', dueDate: new Date('2026-08-10'), status: 'assigned' }],
+    new Date('2026-08-12T12:00:00Z'),
+  );
+  assert.equal(result.upcomingAssignments.length, 0);
+  assert.equal(result.needsAttention[0].attentionType, 'overdue');
+  assert.equal(result.needsAttention[0].pendingCount, 1);
+});
+
+test('teacher dashboard endpoint scopes courses and assignments to the authenticated owner', async (t) => {
+  let courseFilter;
+  let assignmentFilter;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'find', (filter) => {
+    courseFilter = filter;
+    return { sort: () => ({ lean: async () => [{ _id: 'course-owned', code: 'CPAN 370', name: 'Systems', studentIds: [] }] }) };
+  });
+  mock.method(Assignment, 'find', (filter) => {
+    assignmentFilter = filter;
+    return { lean: async () => [] };
+  });
+
+  const res = response();
+  await getTeacherDashboard({ user: { userId: 'teacher-1', role: 'teacher' } }, res, failNext);
+
+  assert.deepEqual(courseFilter, { teacherId: 'teacher-1' });
+  assert.deepEqual(assignmentFilter, { courseId: { $in: ['course-owned'] }, distributionId: { $ne: null } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.summary.coursesTaught, 1);
+});
+
+test('teacher dashboard endpoint denies students and admins', async () => {
+  for (const role of ['student', 'admin']) {
+    const res = response();
+    await getTeacherDashboard({ user: { userId: `${role}-1`, role } }, res, failNext);
+    assert.equal(res.statusCode, 403);
+  }
 });
 
 test('student cannot link an assignment to a course they are not enrolled in', async (t) => {

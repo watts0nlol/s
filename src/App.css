@@ -109,3 +109,24 @@
 .chat-message p { margin: 0; }
 .distribution-progress { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
 .distribution-progress strong { color: var(--ink); }
+.teacher-course-grid .course-summary-card { cursor: default; text-align: left; }
+.teacher-course-students { color: var(--muted); font-size: 10px; font-weight: 700; }
+.teacher-course-name { color: var(--muted); font-size: 11px; min-height: 28px; }
+.teacher-course-stats { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin: 15px 0 12px; }
+.teacher-course-stats div { display: flex; flex-direction: column; gap: 3px; }
+.teacher-course-stats dt { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.teacher-course-stats dd { color: var(--ink); font-size: 12px; font-weight: 800; margin: 0; }
+.teacher-assignment-list, .teacher-attention-list { display: flex; flex-direction: column; margin-top: 10px; }
+.teacher-assignment-row { border-bottom: 1px solid #edf1f6; display: grid; gap: 4px 14px; grid-template-columns: minmax(0, 1fr) auto; padding: 13px 0; }
+.teacher-assignment-row:last-child, .teacher-attention-row:last-child { border-bottom: 0; }
+.teacher-assignment-row h3, .teacher-attention-row h3 { color: var(--ink); font-size: 12px; margin: 0 0 4px; }
+.teacher-assignment-row p, .teacher-attention-row p { color: var(--muted); font-size: 10px; margin: 0; }
+.teacher-assignment-row > strong { align-self: center; color: var(--ink); font-size: 11px; grid-row: span 2; }
+.teacher-assignment-row > small { color: var(--muted); font-size: 9px; grid-column: 2; text-align: right; }
+.teacher-attention-row { align-items: center; border-bottom: 1px solid #edf1f6; display: flex; gap: 10px; padding: 13px 0; }
+.teacher-attention-row > span { align-items: center; border-radius: 99px; display: flex; flex: 0 0 auto; font-size: 11px; font-weight: 800; height: 28px; justify-content: center; width: 28px; }
+.attention-overdue > span { background: #fee2e2; color: #b91c1c; }
+.attention-approaching > span { background: #fef3c7; color: #a16207; }
+.teacher-quick-actions .quick-action-list { display: grid; gap: 0 22px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 800px) { .teacher-quick-actions .quick-action-list { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .teacher-assignment-row { grid-template-columns: 1fr; } .teacher-assignment-row > strong, .teacher-assignment-row > small { grid-column: 1; text-align: left; } }

@@ -10,8 +10,9 @@ import {
   getRiskAssessment,
   getPerformanceTrends,
   getDashboard,
+  getTeacherDashboard,
 } from '../controllers/analyticsController.js';
-import { verifyToken } from '../middleware/auth.js';
+import { requireRole, verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -24,5 +25,6 @@ router.get('/priority', getPriorityList);      // GET /api/analytics/priority
 router.get('/risk', getRiskAssessment);        // GET /api/analytics/risk?course=CPAN212
 router.get('/trends', getPerformanceTrends);   // GET /api/analytics/trends?course=CPAN212
 router.get('/dashboard', getDashboard);        // GET /api/analytics/dashboard
+router.get('/teacher-dashboard', requireRole('teacher'), getTeacherDashboard);
 
 export default router;

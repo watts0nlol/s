@@ -1,4 +1,5 @@
 import { Assignment } from '../models/assignments.js';
+import crypto from 'node:crypto';
 import { Course } from '../models/courses.js';
 import { canAccessCourse } from '../utils/courseAccess.js';
 import { validateAssignment } from '../utils/validation.js';
@@ -80,6 +81,7 @@ export const createAssignment = async (req, res, next) => {
         return res.status(409).json({ error: 'This assignment has already been distributed to the course' });
       }
 
+      const distributionId = crypto.randomUUID();
       const assignments = await Assignment.insertMany(enrolledStudentIds.map((enrolledStudentId) => ({
         title,
         description: description || '',
@@ -91,6 +93,7 @@ export const createAssignment = async (req, res, next) => {
         weight,
         course: linkedCourse.code,
         courseId: String(linkedCourse._id),
+        distributionId,
       })));
       return res.status(201).json({ assignments, count: assignments.length });
     }

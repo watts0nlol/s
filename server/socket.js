@@ -1,7 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { Course } from './models/courses.js';
 import { User } from './models/users.js';
+import { CourseMessage } from './models/courseMessages.js';
 import { canAccessCourse } from './utils/courseAccess.js';
+import { publicCourseMessage } from './utils/courseMessages.js';
 
 const currentSocketUser = async (userId) => {
   const user = await User.findById(userId, '-password').lean();
@@ -43,12 +45,14 @@ export const authorizeSocketCourse = async (courseId, user) => {
 
 export const registerSocketHandlers = (io, socket) => {
   socket.on('joinCourse', async (courseId) => {
+    socket.data.joinRequestId = (socket.data.joinRequestId || 0) + 1;
+    const requestId = socket.data.joinRequestId;
     if (socket.data.currentCourseId) {
       socket.leave(`course:${socket.data.currentCourseId}`);
       socket.data.currentCourseId = null;
     }
     const course = await authorizeSocketCourse(courseId, socket.data.user);
-    if (course) {
+    if (course && requestId === socket.data.joinRequestId) {
       socket.data.currentCourseId = String(course._id);
       socket.join(`course:${course._id}`);
     }
@@ -61,24 +65,27 @@ export const registerSocketHandlers = (io, socket) => {
       typeof data.message !== 'string' ||
       !data.message.trim()
     ) return;
-    const course = await authorizeSocketCourse(data.course, socket.data.user);
-    if (!course) {
-      socket.leave(`course:${data.course}`);
-      socket.data.currentCourseId = null;
-      return;
+    try {
+      const course = await authorizeSocketCourse(data.course, socket.data.user);
+      if (!course) {
+        socket.leave(`course:${data.course}`);
+        socket.data.currentCourseId = null;
+        return;
+      }
+      const sender = await currentSocketUser(socket.data.user.userId);
+      if (!sender) return;
+      const persistedMessage = await CourseMessage.create({
+        courseId: data.course,
+        senderId: sender.userId,
+        senderFirstName: sender.firstName,
+        senderLastName: sender.lastName,
+        senderRole: sender.role,
+        message: data.message.trim(),
+      });
+      io.to(`course:${data.course}`).emit('courseMessage', publicCourseMessage(persistedMessage));
+    } catch (error) {
+      console.error('Course message could not be persisted:', error.message);
     }
-    const sender = await currentSocketUser(socket.data.user.userId);
-    if (!sender) return;
-    io.to(`course:${data.course}`).emit('courseMessage', {
-      course: data.course,
-      message: data.message.trim(),
-      sender: {
-        userId: sender.userId,
-        firstName: sender.firstName,
-        lastName: sender.lastName,
-        role: sender.role,
-      },
-    });
   });
 
   const notificationTimer = setTimeout(() => {

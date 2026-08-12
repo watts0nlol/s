@@ -11,6 +11,7 @@ import userRouter from "./routers/users.js";
 import announcementRoutes from "./routers/announcements.js";
 import analyticsRouter from "./routers/analytics.js"; 
 import courseRouter from "./routers/courses.js";
+import courseMessageRouter from "./routers/courseMessages.js";
 
 
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
@@ -51,6 +52,7 @@ app.use("/api/users", userRouter);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/courses", courseRouter);
+app.use("/api/course-messages", courseMessageRouter);
 
 
 // Error handlers

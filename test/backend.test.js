@@ -6,8 +6,9 @@ import nodemailer from 'nodemailer';
 
 import { login, register } from '../server/controllers/authController.js';
 import { createAssignment, listAssignments, updateAssignment, updateAssignmentStatus } from '../server/controllers/assignmentController.js';
-import { createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
+import { backfillCourseAssignments, createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
 import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
+import { listCourseMessages } from '../server/controllers/courseMessageController.js';
 import { listUsers, updateUserRole } from '../server/controllers/userController.js';
 import { getDashboard, getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
@@ -15,6 +16,7 @@ import logger from '../server/middleware/logger.js';
 import { Assignment } from '../server/models/assignments.js';
 import { Announcement } from '../server/models/announcements.js';
 import { Course } from '../server/models/courses.js';
+import { CourseMessage } from '../server/models/courseMessages.js';
 import { User } from '../server/models/users.js';
 import { calculateGPA, prioritizeAssignments } from '../server/utils/analytics.js';
 import { canAccessCourse } from '../server/utils/courseAccess.js';
@@ -566,6 +568,7 @@ test('student joins an active course idempotently without receiving its join cod
     update = receivedUpdate;
     return { _id: 'course-1', code: 'CPAN 366', joinCode: 'JOIN123', studentIds: ['student-1'] };
   });
+  mock.method(Assignment, 'find', () => ({ lean: async () => [] }));
 
   const res = response();
   await joinCourse({ user: { userId: 'student-1', role: 'student' }, body: { joinCode: ' join123 ' } }, res, failNext);
@@ -581,6 +584,55 @@ test('invalid join codes return not found without enrolling a student', async (t
   const res = response();
   await joinCourse({ user: { userId: 'student-1', role: 'student' }, body: { joinCode: 'NOCOURSE' } }, res, failNext);
   assert.equal(res.statusCode, 404);
+});
+
+test('late join backfills distributed assignments with independent assigned state', async (t) => {
+  const course = { _id: 'course-1', code: 'CPAN 366' };
+  const sourceDueDate = new Date('2026-09-20');
+  let inserted = [];
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'find', () => ({ lean: async () => [
+    {
+      _id: 'source-copy', title: 'Project', description: 'Build it', dueDate: sourceDueDate,
+      weight: 35, course: 'CPAN 366', courseId: 'course-1', createdBy: 'teacher-1',
+      distributionId: 'distribution-1', studentId: 'student-existing', status: 'completed', grade: 96,
+    },
+    {
+      _id: 'personal-linked', title: 'Personal Study', dueDate: sourceDueDate,
+      course: 'CPAN 366', courseId: 'course-1', createdBy: 'student-existing',
+      studentId: 'student-existing', status: 'assigned',
+    },
+  ] }));
+  mock.method(Assignment, 'insertMany', async (values) => { inserted = values; return values; });
+
+  const count = await backfillCourseAssignments(course, 'student-late');
+  assert.equal(count, 1);
+  assert.equal(inserted[0].title, 'Project');
+  assert.equal(inserted[0].description, 'Build it');
+  assert.equal(inserted[0].dueDate, sourceDueDate);
+  assert.equal(inserted[0].weight, 35);
+  assert.equal(inserted[0].course, 'CPAN 366');
+  assert.equal(inserted[0].courseId, 'course-1');
+  assert.equal(inserted[0].createdBy, 'teacher-1');
+  assert.equal(inserted[0].distributionId, 'distribution-1');
+  assert.equal(inserted[0].studentId, 'student-late');
+  assert.equal(inserted[0].status, 'assigned');
+  assert.equal(Object.hasOwn(inserted[0], 'grade'), false);
+  assert.equal(inserted.some((assignment) => assignment.title === 'Personal Study'), false);
+});
+
+test('late join backfill is idempotent for an existing student copy', async (t) => {
+  let insertCalled = false;
+  const shared = { title: 'Project', dueDate: new Date('2026-09-20'), createdBy: 'teacher-1', courseId: 'course-1', distributionId: 'distribution-1' };
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'find', () => ({ lean: async () => [
+    { ...shared, studentId: 'student-existing', status: 'completed' },
+    { ...shared, studentId: 'student-late', status: 'assigned' },
+  ] }));
+  mock.method(Assignment, 'insertMany', async () => { insertCalled = true; });
+  const count = await backfillCourseAssignments({ _id: 'course-1' }, 'student-late');
+  assert.equal(count, 0);
+  assert.equal(insertCalled, false);
 });
 
 test('teacher listings are ownership-scoped while admins list all courses', async (t) => {
@@ -888,6 +940,38 @@ test('Socket.IO authentication accepts valid JWTs and course authorization uses 
   assert.equal(await authorizeSocketCourse('owned-by-stale-teacher', { userId: 'student-1', role: 'teacher' }), null);
 });
 
+test('course message history is limited, ordered, safe, and course-authorized', async (t) => {
+  const course = { _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] };
+  let filter;
+  let limit;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => course }));
+  mock.method(CourseMessage, 'find', (receivedFilter) => {
+    filter = receivedFilter;
+    return {
+      sort: () => ({
+        limit(receivedLimit) {
+          limit = receivedLimit;
+          return { lean: async () => [{
+            _id: 'message-1', courseId: 'course-1', senderId: 'student-1', senderFirstName: 'Ada',
+            senderLastName: 'Student', senderRole: 'student', message: 'Hello', createdAt: new Date('2026-08-12'),
+          }] };
+        },
+      }),
+    };
+  });
+  const res = response();
+  await listCourseMessages({ params: { courseId: 'course-1' }, user: { userId: 'student-1', role: 'student' } }, res, failNext);
+  assert.deepEqual(filter, { courseId: 'course-1' });
+  assert.equal(limit, 100);
+  assert.deepEqual(res.body[0].sender, { userId: 'student-1', firstName: 'Ada', lastName: 'Student', role: 'student' });
+  assert.equal(Object.hasOwn(res.body[0].sender, 'email'), false);
+
+  const denied = response();
+  await listCourseMessages({ params: { courseId: 'course-1' }, user: { userId: 'student-2', role: 'student' } }, denied, failNext);
+  assert.equal(denied.statusCode, 403);
+});
+
 test('Socket.IO handlers join only authorized rooms and isolate message broadcasts', async (t) => {
   const handlers = {};
   const joined = [];
@@ -904,6 +988,12 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
   t.after(() => mock.restoreAll());
   mock.method(User, 'findById', (id) => ({ lean: async () => ({ _id: id, firstName: 'Ada', lastName: 'Student', email: 'private@example.com', role: 'student' }) }));
   mock.method(Course, 'findById', (id) => ({ lean: async () => ({ _id: id, teacherId: 'teacher-1', studentIds: id === 'course-1' ? ['student-1'] : [] }) }));
+  const createdAt = new Date('2026-08-12T12:00:00Z');
+  let persistedInput;
+  mock.method(CourseMessage, 'create', async (value) => {
+    persistedInput = value;
+    return { ...value, _id: 'message-1', createdAt };
+  });
 
   registerSocketHandlers(io, socket);
   await handlers.joinCourse('course-2');
@@ -917,11 +1007,16 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
     room: 'course:course-1',
     event: 'courseMessage',
     message: {
+      _id: 'message-1',
       course: 'course-1',
       message: 'hello',
       sender: { userId: 'student-1', firstName: 'Ada', lastName: 'Student', role: 'student' },
+      createdAt,
     },
   }]);
+  assert.equal(persistedInput.senderId, 'student-1');
+  assert.equal(persistedInput.senderRole, 'student');
+  assert.equal(Object.hasOwn(persistedInput, 'sender'), false);
   assert.equal(Object.hasOwn(broadcasts[0].message.sender, 'email'), false);
 
   await handlers.joinCourse(null);

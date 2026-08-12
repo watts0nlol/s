@@ -735,7 +735,7 @@ test('teacher distributes independent assignments only to enrolled course studen
   const res = response();
   await createAssignment({
     user: { userId: 'teacher-1', role: 'teacher' },
-    body: { title: 'Course Project', dueDate: '2026-09-15', courseId: 'course-1', weight: 20 },
+    body: { title: 'Course Project', dueDate: '2026-09-15', courseId: 'course-1', course: '', studentId: '', weight: 20 },
   }, res, failNext);
 
   assert.equal(res.statusCode, 201);
@@ -744,6 +744,16 @@ test('teacher distributes independent assignments only to enrolled course studen
   assert.equal(inserted.some((assignment) => assignment.studentId === 'student-3'), false);
   assert.notEqual(inserted[0]._id, inserted[1]._id);
   assert.equal(inserted.every((assignment) => assignment.status === 'assigned' && assignment.courseId === 'course-1'), true);
+});
+
+test('teacher legacy assignment creation still requires a student ID', async () => {
+  const res = response();
+  await createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Legacy assignment', dueDate: '2026-09-15', courseId: '', course: 'Legacy 101', studentId: '' },
+  }, res, failNext);
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /studentId is required/);
 });
 
 test('teacher cannot distribute assignments to another teacher course', async (t) => {

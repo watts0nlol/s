@@ -9,7 +9,7 @@ export default function AddAssignmentPage() {
   const { addAssignment } = useAssignments();
   const { courses } = useCourses();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ title: "", dueDate: "", studentId: "", course: "", courseId: "" });
+  const [form, setForm] = useState({ title: "", dueDate: "", studentId: "", course: "", courseId: "", weight: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const elevated = user.role === "teacher" || user.role === "admin";
@@ -19,7 +19,10 @@ export default function AddAssignmentPage() {
     event.preventDefault();
     setError(""); setSubmitting(true);
     try {
-      await addAssignment(form);
+      const payload = { ...form };
+      if (payload.weight === "") delete payload.weight;
+      else payload.weight = Number(payload.weight);
+      await addAssignment(payload);
       navigate("/assignments", { state: { created: true } });
     } catch (createError) {
       setError(createError.message);
@@ -43,6 +46,7 @@ export default function AddAssignmentPage() {
         )}
         {elevated && !linkedCourse && <label>Student ID <span>(legacy/unlinked only)</span><input value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })} required /></label>}
         {!linkedCourse && <label>Legacy course name <span>(optional)</span><input value={form.course} onChange={(event) => setForm({ ...form, course: event.target.value })} placeholder="For an unlinked assignment" /></label>}
+        {elevated && <label>Weight (%) <span>(optional)</span><input type="number" min="0" max="100" step="0.1" value={form.weight} onChange={(event) => setForm({ ...form, weight: event.target.value })} placeholder="0–100" /></label>}
         <label>Due date<input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} required /></label>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="form-actions"><Link className="secondary-button" to="/assignments">Cancel</Link><button className="primary-button" disabled={submitting}>{submitting ? "Adding…" : elevated && linkedCourse ? "Distribute Assignment" : "Add Assignment"}</button></div>

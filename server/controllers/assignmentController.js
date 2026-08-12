@@ -3,7 +3,7 @@ import { Course } from '../models/courses.js';
 import { canAccessCourse } from '../utils/courseAccess.js';
 import { validateAssignment } from '../utils/validation.js';
 
-const resolveLinkedCourse = async (courseId, user, studentId) => {
+const resolveLinkedCourse = async (courseId, user, studentId = null) => {
   if (!courseId) return null;
   const course = await Course.findById(courseId).lean();
   if (!course) {
@@ -16,7 +16,7 @@ const resolveLinkedCourse = async (courseId, user, studentId) => {
     error.statusCode = 403;
     throw error;
   }
-  if (user.role !== 'student' && !course.studentIds?.some((id) => String(id) === String(studentId))) {
+  if (studentId && user.role !== 'student' && !course.studentIds?.some((id) => String(id) === String(studentId))) {
     const error = new Error('Student is not enrolled in this course');
     error.statusCode = 400;
     throw error;
@@ -59,7 +59,40 @@ export const createAssignment = async (req, res, next) => {
     if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
     const { title, description, dueDate, grade, weight, courseId } = value;
-    const studentId = req.user.role === 'student' ? req.user.userId : value.studentId;
+    const isStudent = req.user.role === 'student';
+    const studentId = isStudent ? req.user.userId : value.studentId;
+
+    if (!isStudent && courseId) {
+      const linkedCourse = await resolveLinkedCourse(courseId, req.user);
+      const enrolledStudentIds = [...new Set((linkedCourse.studentIds || []).map(String).filter(Boolean))];
+      if (enrolledStudentIds.length === 0) {
+        return res.status(400).json({ error: 'Course has no enrolled students' });
+      }
+
+      const duplicate = await Assignment.findOne({
+        courseId: String(linkedCourse._id),
+        createdBy: req.user.userId,
+        title,
+        dueDate,
+      }).lean();
+      if (duplicate) {
+        return res.status(409).json({ error: 'This assignment has already been distributed to the course' });
+      }
+
+      const assignments = await Assignment.insertMany(enrolledStudentIds.map((enrolledStudentId) => ({
+        title,
+        description: description || '',
+        studentId: enrolledStudentId,
+        dueDate,
+        createdBy: req.user.userId,
+        status: 'assigned',
+        grade,
+        weight,
+        course: linkedCourse.code,
+        courseId: String(linkedCourse._id),
+      })));
+      return res.status(201).json({ assignments, count: assignments.length });
+    }
 
     if (!studentId) {
       return res.status(400).json({ error: 'title, studentId, and dueDate are required' });

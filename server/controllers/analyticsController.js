@@ -102,13 +102,19 @@ export const getDashboard = async (req, res, next) => {
       courseMap[key].push(a);
     });
 
-    const courses = Object.entries(courseMap).map(([courseName, assignments]) => ({
-      courseName,
-      gpa: calculateGPA(assignments),
-      prediction: predictFinalGrade(assignments),
-      risk: detectRisk(assignments),
-      trends: getPerformanceSummary(assignments),
-    }));
+    const courses = Object.entries(courseMap).map(([courseName, assignments]) => {
+      const completedAssignments = assignments.filter((assignment) => assignment.status === 'completed').length;
+      return {
+        courseName,
+        gpa: calculateGPA(assignments),
+        prediction: predictFinalGrade(assignments),
+        risk: detectRisk(assignments),
+        trends: getPerformanceSummary(assignments),
+        totalAssignments: assignments.length,
+        completedAssignments,
+        completionPercent: assignments.length > 0 ? Math.round((completedAssignments / assignments.length) * 100) : 0,
+      };
+    });
 
     const cumulativeGPA = calculateCumulativeGPA(
       courses.map((c) => ({ courseName: c.courseName, assignments: courseMap[c.courseName] }))

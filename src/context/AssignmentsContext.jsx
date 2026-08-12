@@ -45,7 +45,8 @@ export function AssignmentsProvider({ children }) {
     }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Assignment could not be created.");
-    setAssignments((current) => [...current, data].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
+    const createdAssignments = Array.isArray(data.assignments) ? data.assignments : [data];
+    setAssignments((current) => [...current, ...createdAssignments].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)));
     setAnalyticsRefreshKey((key) => key + 1);
     return data;
   }, [authHeaders, logout]);

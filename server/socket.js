@@ -67,7 +67,18 @@ export const registerSocketHandlers = (io, socket) => {
       socket.data.currentCourseId = null;
       return;
     }
-    io.to(`course:${data.course}`).emit('courseMessage', data.message.trim());
+    const sender = await currentSocketUser(socket.data.user.userId);
+    if (!sender) return;
+    io.to(`course:${data.course}`).emit('courseMessage', {
+      course: data.course,
+      message: data.message.trim(),
+      sender: {
+        userId: sender.userId,
+        firstName: sender.firstName,
+        lastName: sender.lastName,
+        role: sender.role,
+      },
+    });
   });
 
   const notificationTimer = setTimeout(() => {

@@ -13,9 +13,10 @@ const priorityFor = (dueDate) => {
 
 export default function AssignmentsPage() {
   const { user } = useAuth();
-  const { assignments, loading, error, deleteAssignment, updateAssignmentStatus } = useAssignments();
+  const { assignments, loading, error, deleteAssignment, deleteAssignmentDistribution, updateAssignmentStatus } = useAssignments();
   const [actionError, setActionError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
+  const [deletingDistributionId, setDeletingDistributionId] = useState("");
   const canDelete = user.role === "teacher" || user.role === "admin";
   const visibleAssignments = useMemo(
     () => canDelete ? groupAssignmentsByDistribution(assignments) : assignments,
@@ -25,6 +26,21 @@ export default function AssignmentsPage() {
   const remove = async (id) => {
     setActionError("");
     try { await deleteAssignment(id); } catch (deleteError) { setActionError(deleteError.message); }
+  };
+
+  const removeDistribution = async (assignment) => {
+    const confirmed = window.confirm(`Delete “${assignment.title}” for all ${assignment.assignedCount} assigned students? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setActionError("");
+    setDeletingDistributionId(assignment.distributionId);
+    try {
+      await deleteAssignmentDistribution(assignment.distributionId);
+    } catch (deleteError) {
+      setActionError(deleteError.message);
+    } finally {
+      setDeletingDistributionId("");
+    }
   };
 
   const toggleCompletion = async (assignment) => {
@@ -48,8 +64,7 @@ export default function AssignmentsPage() {
           const priority = priorityFor(assignment.dueDate);
           const isOwner = user.role === "student" && assignment.studentId === user._id;
           const completed = assignment.status === "completed";
-          const groupExplanationId = `group-delete-${assignment.distributionId}`;
-          return <article className={!assignment.isDistributionGroup && completed ? "assignment-card assignment-completed" : "assignment-card"} key={assignment.distributionId || assignment._id}><div className="card-heading"><span className={`status-pill priority-${priority.toLowerCase()}`}>{priority}</span>{!assignment.isDistributionGroup && assignment.status && <span className="status-text">{assignment.status}</span>}</div><h2>{assignment.title}</h2><p>{assignment.course || "Uncategorized"}</p><dl><div><dt>Due</dt><dd>{new Date(assignment.dueDate).toLocaleDateString()}</dd></div>{assignment.weight != null && <div><dt>Weight</dt><dd>{assignment.weight}%</dd></div>}{assignment.isDistributionGroup && <div><dt>Assigned</dt><dd>{assignment.assignedCount} {assignment.assignedCount === 1 ? "student" : "students"}</dd></div>}</dl>{assignment.isDistributionGroup && <p className="distribution-progress"><strong>{assignment.completedCount} completed</strong><span aria-hidden="true"> · </span><strong>{assignment.pendingCount} pending</strong></p>}<div className="assignment-actions">{isOwner && <button className={completed ? "secondary-button" : "completion-button"} disabled={updatingId === assignment._id} type="button" onClick={() => toggleCompletion(assignment)}>{updatingId === assignment._id ? "Updating…" : completed ? "Mark Incomplete" : "Mark Complete"}</button>}{canDelete && (assignment.isDistributionGroup ? <div className="group-delete-control"><button aria-describedby={groupExplanationId} className="danger-button" disabled type="button">Delete unavailable</button><small id={groupExplanationId}>Course-wide groups can’t be deleted here.</small></div> : <button className="danger-button" type="button" onClick={() => remove(assignment._id)}>Delete</button>)}</div></article>;
+          return <article className={!assignment.isDistributionGroup && completed ? "assignment-card assignment-completed" : "assignment-card"} key={assignment.distributionId || assignment._id}><div className="card-heading"><span className={`status-pill priority-${priority.toLowerCase()}`}>{priority}</span>{!assignment.isDistributionGroup && assignment.status && <span className="status-text">{assignment.status}</span>}</div><h2>{assignment.title}</h2><p>{assignment.course || "Uncategorized"}</p><dl><div><dt>Due</dt><dd>{new Date(assignment.dueDate).toLocaleDateString()}</dd></div>{assignment.weight != null && <div><dt>Weight</dt><dd>{assignment.weight}%</dd></div>}{assignment.isDistributionGroup && <div><dt>Assigned</dt><dd>{assignment.assignedCount} {assignment.assignedCount === 1 ? "student" : "students"}</dd></div>}</dl>{assignment.isDistributionGroup && <p className="distribution-progress"><strong>{assignment.completedCount} completed</strong><span aria-hidden="true"> · </span><strong>{assignment.pendingCount} pending</strong></p>}<div className="assignment-actions">{isOwner && <button className={completed ? "secondary-button" : "completion-button"} disabled={updatingId === assignment._id} type="button" onClick={() => toggleCompletion(assignment)}>{updatingId === assignment._id ? "Updating…" : completed ? "Mark Incomplete" : "Mark Complete"}</button>}{canDelete && (assignment.isDistributionGroup ? <button className="danger-button" disabled={deletingDistributionId === assignment.distributionId} type="button" onClick={() => removeDistribution(assignment)}>{deletingDistributionId === assignment.distributionId ? "Deleting…" : "Delete"}</button> : <button className="danger-button" type="button" onClick={() => remove(assignment._id)}>Delete</button>)}</div></article>;
         })}
       </div>
     </section>

@@ -62,6 +62,22 @@ export function AssignmentsProvider({ children }) {
     setAnalyticsRefreshKey((key) => key + 1);
   }, [authHeaders, logout]);
 
+  const deleteAssignmentDistribution = useCallback(async (distributionId) => {
+    const response = await fetch(`${API_BASE_URL}/api/assignments/distributions/${encodeURIComponent(distributionId)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    if (response.status === 401) {
+      logout();
+      throw new Error("Your session has expired.");
+    }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Assignment distribution could not be deleted.");
+    await fetchAssignments();
+    setAnalyticsRefreshKey((key) => key + 1);
+    return data;
+  }, [authHeaders, fetchAssignments, logout]);
+
   const updateAssignmentStatus = useCallback(async (id, status) => {
     const response = await fetch(`${API_BASE_URL}/api/assignments/${id}/status`, {
       method: "PATCH",
@@ -79,7 +95,7 @@ export function AssignmentsProvider({ children }) {
     return data;
   }, [authHeaders, logout]);
 
-  const value = useMemo(() => ({ assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, updateAssignmentStatus, analyticsRefreshKey }), [assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, updateAssignmentStatus, analyticsRefreshKey]);
+  const value = useMemo(() => ({ assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, deleteAssignmentDistribution, updateAssignmentStatus, analyticsRefreshKey }), [assignments, loading, error, fetchAssignments, addAssignment, deleteAssignment, deleteAssignmentDistribution, updateAssignmentStatus, analyticsRefreshKey]);
   return <AssignmentsContext.Provider value={value}>{children}</AssignmentsContext.Provider>;
 }
 

@@ -1,7 +1,7 @@
 import { Assignment } from '../models/assignments.js';
 import crypto from 'node:crypto';
 import { Course } from '../models/courses.js';
-import { canAccessCourse } from '../utils/courseAccess.js';
+import { canAccessCourse, canManageCourse } from '../utils/courseAccess.js';
 import { validateAssignment } from '../utils/validation.js';
 
 const resolveLinkedCourse = async (courseId, user, studentId = null) => {
@@ -194,6 +194,36 @@ export const deleteAssignment = async (req, res, next) => {
       return res.status(404).json({ error: 'Assignment not found' });
     }
     res.json({ deleted: assignment });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteAssignmentDistribution = async (req, res, next) => {
+  try {
+    if (!['teacher', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const distributionId = req.params.distributionId;
+    const assignment = await Assignment.findOne({ distributionId }).lean();
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment distribution not found' });
+    }
+    if (!assignment.courseId) {
+      return res.status(400).json({ error: 'Assignment distribution is not linked to a course' });
+    }
+
+    const course = await Course.findById(assignment.courseId).lean();
+    if (!course) {
+      return res.status(404).json({ error: 'Linked course not found' });
+    }
+    if (!canManageCourse(course, req.user)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await Assignment.deleteMany({ distributionId });
+    res.json({ distributionId, deletedCount: result.deletedCount });
   } catch (error) {
     next(error);
   }

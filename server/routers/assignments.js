@@ -8,6 +8,7 @@ import {
   updateAssignment,
   updateAssignmentStatus,
   deleteAssignment,
+  deleteAssignmentDistribution,
 } from '../controllers/assignmentController.js';
 // Import middleware for authentication and role-based access control
 import { verifyToken, requireRole } from '../middleware/auth.js'; 
@@ -24,6 +25,7 @@ router.patch('/:id/status', updateAssignmentStatus); // Students may update only
 // teachers and admins may update any assignment status
 router.put('/:id', requireRole('teacher', 'admin'), updateAssignment); // Route to update an
 // existing assignment (only teachers and admins)
+router.delete('/distributions/:distributionId', requireRole('teacher', 'admin'), deleteAssignmentDistribution);
 router.delete('/:id', requireRole('teacher', 'admin'), deleteAssignment); // Route to delete an 
 // assignment (only teachers and admins)
 

@@ -10,14 +10,14 @@ const priorityColors = {
   HIGH: { background: "#fef3c7", color: "#a16207" },
   MEDIUM: { background: "#dbeafe", color: "#1d4ed8" },
   LOW: { background: "#dcfce7", color: "#15803d" },
-  DONE: { background: "#f1f5f9", color: "#64748b" },
+  DONE: { background: "#dcfce7", color: "#15803d" },
 };
 
 const riskClass = (risk = "NONE") => `risk-${risk.toLowerCase()}`;
 const courseGrade = (course) => course?.gpa?.percentage ?? course?.gpa?.average ?? 0;
 const courseLetter = (course) => course?.gpa?.letterGrade ?? course?.gpa?.letter ?? "N/A";
 const trendDataFor = (course) => course?.trends?.trendData ?? course?.trends?.trend ?? [];
-const courseCompletion = (course) => course?.prediction?.completionPercent ?? Math.max(0, 100 - (course?.prediction?.remainingWeight ?? 100));
+const courseCompletion = (course) => course?.completionPercent ?? 0;
 
 const dueLabel = (assignment) => {
   const days = assignment.daysUntilDue;
@@ -97,7 +97,7 @@ export default function AnalyticsDashboard({ token, user, refreshKey }) {
       </section>
 
       <div className="dashboard-two-column">
-        <section className="content-card urgent-section" aria-labelledby="urgent-title"><div className="section-heading"><div><p className="eyebrow">What is due next?</p><h2 id="urgent-title">Upcoming &amp; Urgent</h2></div><Link to="/assignments">View All</Link></div>{data.upcomingPriority?.length ? <div className="urgent-list">{data.upcomingPriority.map((assignment, index) => { const priority = assignment.priority ?? assignment.priorityLabel ?? "LOW"; return <article className="urgent-row" key={assignment._id || `${assignment.title}-${index}`}><span className="urgent-symbol" aria-hidden="true">!</span><div className="urgent-copy"><h3>{assignment.title}</h3><p>{assignment.course || "Uncategorized"} · {dueLabel(assignment)}</p></div><div className="urgent-meta"><span className="priority-pill" style={priorityColors[priority] || priorityColors.LOW}>{priority}</span>{assignment.weight != null && <small>{assignment.weight}% weight</small>}</div></article>; })}</div> : <div className="empty-state compact-empty"><h3>Nothing urgent</h3><p>Your priority assignments will appear here.</p></div>}</section>
+        <section className="content-card urgent-section" aria-labelledby="urgent-title"><div className="section-heading"><div><p className="eyebrow">What is due next?</p><h2 id="urgent-title">Upcoming &amp; Urgent</h2></div><Link to="/assignments">View All</Link></div>{data.upcomingPriority?.length ? <div className="urgent-list">{data.upcomingPriority.map((assignment, index) => { const priority = assignment.priority ?? assignment.priorityLabel ?? "LOW"; const completed = assignment.status === "completed" || priority === "DONE"; return <article className={completed ? "urgent-row urgent-row-completed" : "urgent-row"} key={assignment._id || `${assignment.title}-${index}`}><span className={completed ? "urgent-symbol urgent-symbol-completed" : "urgent-symbol"} aria-hidden="true">{completed ? "✓" : "!"}</span><div className="urgent-copy"><h3>{assignment.title}</h3><p>{assignment.course || "Uncategorized"} · {dueLabel(assignment)}</p></div><div className="urgent-meta"><span className="priority-pill" style={priorityColors[priority] || priorityColors.LOW}>{priority}</span>{assignment.weight != null && <small>{assignment.weight}% weight</small>}</div></article>; })}</div> : <div className="empty-state compact-empty"><h3>Nothing urgent</h3><p>Your priority assignments will appear here.</p></div>}</section>
 
         <section className="content-card quick-actions-card" aria-labelledby="actions-title"><div className="section-heading"><div><p className="eyebrow">What needs my attention?</p><h2 id="actions-title">Quick Actions</h2></div></div><div className="quick-action-list"><Link to="/assignments/new"><span>+</span><div><strong>Add Assignment</strong><small>Track a new deadline</small></div><b>→</b></Link><Link to="/assignments"><span>✓</span><div><strong>View Assignments</strong><small>Review your workload</small></div><b>→</b></Link><Link to="/chat"><span>◇</span><div><strong>Open Chat</strong><small>Connect with your course</small></div><b>→</b></Link></div></section>
       </div>

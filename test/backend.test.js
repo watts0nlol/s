@@ -9,7 +9,7 @@ import { createAssignment, listAssignments, updateAssignment, updateAssignmentSt
 import { createCourse, joinCourse, listCourses } from '../server/controllers/courseController.js';
 import { createCourseAnnouncement, listCourseAnnouncements } from '../server/controllers/announcementController.js';
 import { listUsers, updateUserRole } from '../server/controllers/userController.js';
-import { getGPA } from '../server/controllers/analyticsController.js';
+import { getDashboard, getGPA } from '../server/controllers/analyticsController.js';
 import { generateToken, requireRole, verifyToken } from '../server/middleware/auth.js';
 import logger from '../server/middleware/logger.js';
 import { Assignment } from '../server/models/assignments.js';
@@ -720,6 +720,83 @@ test('legacy assignment remains valid without courseId', async (t) => {
   assert.equal(created.courseId, null);
 });
 
+test('teacher distributes independent assignments only to enrolled course students', async (t) => {
+  let inserted = [];
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({
+    _id: 'course-1', code: 'CPAN 366', teacherId: 'teacher-1', studentIds: ['student-1', 'student-2', 'student-2'],
+  }) }));
+  mock.method(Assignment, 'findOne', () => ({ lean: async () => null }));
+  mock.method(Assignment, 'insertMany', async (values) => {
+    inserted = values.map((value, index) => ({ ...value, _id: `distributed-${index + 1}` }));
+    return inserted;
+  });
+
+  const res = response();
+  await createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Course Project', dueDate: '2026-09-15', courseId: 'course-1', weight: 20 },
+  }, res, failNext);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.count, 2);
+  assert.deepEqual(inserted.map((assignment) => assignment.studentId), ['student-1', 'student-2']);
+  assert.equal(inserted.some((assignment) => assignment.studentId === 'student-3'), false);
+  assert.notEqual(inserted[0]._id, inserted[1]._id);
+  assert.equal(inserted.every((assignment) => assignment.status === 'assigned' && assignment.courseId === 'course-1'), true);
+});
+
+test('teacher cannot distribute assignments to another teacher course', async (t) => {
+  let inserted = false;
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-2', teacherId: 'teacher-2', studentIds: ['student-1'] }) }));
+  mock.method(Assignment, 'insertMany', async () => { inserted = true; return []; });
+  await assert.rejects(() => createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Unauthorized', dueDate: '2026-09-15', courseId: 'course-2' },
+  }, response(), failNext), /Access denied/);
+  assert.equal(inserted, false);
+});
+
+test('course distribution rejects an empty course', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-empty', teacherId: 'teacher-1', studentIds: [] }) }));
+  const res = response();
+  await createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Nobody receives this', dueDate: '2026-09-15', courseId: 'course-empty' },
+  }, res, failNext);
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /no enrolled students/);
+});
+
+test('matching course distribution is rejected as a practical duplicate safeguard', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(Course, 'findById', () => ({ lean: async () => ({ _id: 'course-1', teacherId: 'teacher-1', studentIds: ['student-1'] }) }));
+  mock.method(Assignment, 'findOne', () => ({ lean: async () => ({ _id: 'existing-assignment' }) }));
+  const res = response();
+  await createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Already sent', dueDate: '2026-09-15', courseId: 'course-1' },
+  }, res, failNext);
+  assert.equal(res.statusCode, 409);
+  assert.match(res.body.error, /already been distributed/);
+});
+
+test('dashboard course completion uses completed assignment count, not grade weight', async (t) => {
+  t.after(() => mock.restoreAll());
+  mock.method(Assignment, 'find', () => ({ lean: async () => [
+    { title: 'One', course: 'CPAN 366', status: 'completed', dueDate: '2026-09-01', weight: 5 },
+    { title: 'Two', course: 'CPAN 366', status: 'completed', dueDate: '2026-09-02', weight: 5 },
+    { title: 'Three', course: 'CPAN 366', status: 'assigned', dueDate: '2026-09-03', weight: 90 },
+  ] }));
+  const res = response();
+  await getDashboard({ user: { userId: 'student-1' } }, res, failNext);
+  assert.equal(res.body.courses[0].totalAssignments, 3);
+  assert.equal(res.body.courses[0].completedAssignments, 2);
+  assert.equal(res.body.courses[0].completionPercent, 67);
+});
+
 test('student cannot link an assignment to a course they are not enrolled in', async (t) => {
   let created = false;
   t.after(() => mock.restoreAll());
@@ -804,7 +881,7 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
   };
   const io = { to(room) { return { emit(event, message) { broadcasts.push({ room, event, message }); } }; } };
   t.after(() => mock.restoreAll());
-  mock.method(User, 'findById', (id) => ({ lean: async () => ({ _id: id, role: 'student' }) }));
+  mock.method(User, 'findById', (id) => ({ lean: async () => ({ _id: id, firstName: 'Ada', lastName: 'Student', email: 'private@example.com', role: 'student' }) }));
   mock.method(Course, 'findById', (id) => ({ lean: async () => ({ _id: id, teacherId: 'teacher-1', studentIds: id === 'course-1' ? ['student-1'] : [] }) }));
 
   registerSocketHandlers(io, socket);
@@ -814,8 +891,17 @@ test('Socket.IO handlers join only authorized rooms and isolate message broadcas
   assert.deepEqual(joined, ['course:course-1']);
 
   await handlers.courseMessage({ course: 'course-2', message: 'wrong room' });
-  await handlers.courseMessage({ course: 'course-1', message: ' hello ' });
-  assert.deepEqual(broadcasts, [{ room: 'course:course-1', event: 'courseMessage', message: 'hello' }]);
+  await handlers.courseMessage({ course: 'course-1', message: ' hello ', sender: { userId: 'spoofed', firstName: 'Fake', role: 'admin' } });
+  assert.deepEqual(broadcasts, [{
+    room: 'course:course-1',
+    event: 'courseMessage',
+    message: {
+      course: 'course-1',
+      message: 'hello',
+      sender: { userId: 'student-1', firstName: 'Ada', lastName: 'Student', role: 'student' },
+    },
+  }]);
+  assert.equal(Object.hasOwn(broadcasts[0].message.sender, 'email'), false);
 
   await handlers.joinCourse(null);
   assert.deepEqual(left, ['course:course-1']);

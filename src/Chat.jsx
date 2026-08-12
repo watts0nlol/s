@@ -53,7 +53,7 @@ export default function Chat() {
       </div>
       <div className="chat-heading"><div><span className="online-dot" /> Course room</div><strong>{activeCourse.code} — {activeCourse.name}</strong></div>
       <div className="chat-messages" aria-live="polite" aria-label={`${activeCourse.code} course chat messages`}>
-        {messages.length === 0 ? <div className="empty-state"><h2>No messages yet</h2><p>Start a conversation with your course community.</p></div> : messages.map((item, index) => <p className="chat-message" key={`${item}-${index}`}>{item}</p>)}
+        {messages.length === 0 ? <div className="empty-state"><h2>No messages yet</h2><p>Start a conversation with your course community.</p></div> : messages.map((item, index) => <article className="chat-message" key={`${item.sender?.userId || "message"}-${index}`}><header><strong>{item.sender ? `${item.sender.firstName} ${item.sender.lastName}` : "Course member"}</strong>{item.sender?.role && <span>{item.sender.role}</span>}</header><p>{typeof item === "string" ? item : item.message}</p></article>)}
       </div>
       <form className="chat-compose" onSubmit={sendMessage}><label className="sr-only" htmlFor="chat-message">Message {activeCourse.code}</label><input id="chat-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder={`Message ${activeCourse.code}…`} /><button className="primary-button" disabled={!socket}>Send</button></form>
     </div>

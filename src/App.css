@@ -99,3 +99,11 @@
 .admin-user-actions { align-items: center; display: flex; justify-content: flex-end; }
 .admin-user-actions > span { color: var(--muted); font-size: 10px; }
 @media (max-width: 680px) { .admin-user-row { grid-template-columns: 36px 1fr auto; } .admin-user-actions { grid-column: 2 / -1; justify-content: flex-start; } }
+
+.urgent-row-completed { background: #f0fdf4; border-radius: 10px; opacity: .82; padding-inline: 10px; }
+.urgent-row-completed .urgent-copy h3 { color: #166534; }
+.urgent-symbol-completed { background: #dcfce7; color: #15803d; }
+.chat-message header { align-items: baseline; display: flex; gap: 7px; margin-bottom: 4px; }
+.chat-message header strong { color: #312e81; font-size: 11px; }
+.chat-message header span { color: #6366f1; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.chat-message p { margin: 0; }

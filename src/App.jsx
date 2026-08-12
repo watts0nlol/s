@@ -12,6 +12,8 @@ import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import CoursesPage from "./pages/CoursesPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminRoute from "./routes/AdminRoute";
 import "./App.css";
 
 export default function App() {
@@ -30,6 +32,9 @@ export default function App() {
                 <Route path="/courses" element={<CoursesPage />} />
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/announcements" element={<AnnouncementsPage />} />
+                <Route element={<AdminRoute />}>
+                  <Route path="/admin/users" element={<AdminUsersPage />} />
+                </Route>
               </Route>
             </Route>
             <Route path="*" element={<NotFoundPage />} />

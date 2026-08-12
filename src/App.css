@@ -84,3 +84,18 @@
 
 @media (max-width: 900px) { .course-management-layout { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .managed-course-grid { grid-template-columns: 1fr; } .announcement-heading { align-items: stretch; flex-direction: column; } .announcement-compose { width: 100%; } }
+
+.route-loading { align-items: center; color: var(--muted); display: flex; justify-content: center; min-height: 100vh; }
+.admin-user-list { padding: 0; overflow: hidden; }
+.admin-user-row { align-items: center; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: 40px minmax(180px, 1fr) 90px minmax(190px, auto); padding: 15px 18px; }
+.admin-user-row:last-child { border-bottom: 0; }
+.admin-user-identity { display: flex; flex-direction: column; min-width: 0; }
+.admin-user-identity strong { color: var(--ink); font-size: 12px; }
+.admin-user-identity span { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-role { border-radius: 99px; font-size: 9px; font-weight: 800; justify-self: start; padding: 5px 8px; text-transform: uppercase; }
+.role-student { background: #eef2ff; color: #4338ca; }
+.role-teacher { background: #ecfdf5; color: #047857; }
+.role-admin { background: #fff1f2; color: #be123c; }
+.admin-user-actions { align-items: center; display: flex; justify-content: flex-end; }
+.admin-user-actions > span { color: var(--muted); font-size: 10px; }
+@media (max-width: 680px) { .admin-user-row { grid-template-columns: 36px 1fr auto; } .admin-user-actions { grid-column: 2 / -1; justify-content: flex-start; } }

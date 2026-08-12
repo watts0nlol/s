@@ -744,6 +744,17 @@ test('teacher distributes independent assignments only to enrolled course studen
   assert.equal(inserted.some((assignment) => assignment.studentId === 'student-3'), false);
   assert.notEqual(inserted[0]._id, inserted[1]._id);
   assert.equal(inserted.every((assignment) => assignment.status === 'assigned' && assignment.courseId === 'course-1'), true);
+  assert.deepEqual(inserted.map((assignment) => assignment.weight), [20, 20]);
+});
+
+test('course distribution rejects an invalid assignment weight', async () => {
+  const res = response();
+  await createAssignment({
+    user: { userId: 'teacher-1', role: 'teacher' },
+    body: { title: 'Invalid Weight', dueDate: '2026-09-15', courseId: 'course-1', weight: 101 },
+  }, res, failNext);
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /weight must be between 0 and 100/);
 });
 
 test('teacher legacy assignment creation still requires a student ID', async () => {

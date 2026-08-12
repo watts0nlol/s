@@ -8,6 +8,7 @@ import {
 } from '../utils/analytics.js';
 
 import { Assignment } from '../models/assignments.js';
+import { Course } from '../models/courses.js';
 
 const getStudentAssignments = async (userId, course = null) => {
   const filter = { studentId: userId };
@@ -129,6 +130,92 @@ export const getDashboard = async (req, res, next) => {
       totalAssignments: studentAssignments.length,
       completedAssignments: studentAssignments.filter((a) => a.status === 'completed').length,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const buildTeacherDashboard = (courses, assignments, now = new Date()) => {
+  const courseById = new Map(courses.map((course) => [String(course._id), course]));
+  const groups = new Map();
+
+  assignments.forEach((assignment) => {
+    if (!assignment.distributionId || !courseById.has(String(assignment.courseId))) return;
+    const members = groups.get(assignment.distributionId) || [];
+    members.push(assignment);
+    groups.set(assignment.distributionId, members);
+  });
+
+  const distributions = [...groups.entries()].map(([distributionId, members]) => {
+    const template = members[0];
+    const completedCount = members.filter((assignment) => assignment.status === 'completed').length;
+    return {
+      distributionId,
+      title: template.title,
+      course: template.course || courseById.get(String(template.courseId))?.code || 'Uncategorized',
+      courseId: String(template.courseId),
+      dueDate: template.dueDate,
+      weight: template.weight,
+      assignedCount: members.length,
+      completedCount,
+      pendingCount: members.length - completedCount,
+    };
+  });
+
+  const distributedCopies = distributions.reduce((sum, distribution) => sum + distribution.assignedCount, 0);
+  const completedCopies = distributions.reduce((sum, distribution) => sum + distribution.completedCount, 0);
+  const activeDistributions = distributions.filter((distribution) => distribution.pendingCount > 0);
+  const upcomingAssignments = activeDistributions
+    .filter((distribution) => new Date(distribution.dueDate) >= now)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .slice(0, 6);
+  const attentionCutoff = new Date(now.getTime() + (7 * 86400000));
+  const needsAttention = activeDistributions
+    .filter((distribution) => new Date(distribution.dueDate) <= attentionCutoff)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .slice(0, 6)
+    .map((distribution) => ({
+      ...distribution,
+      attentionType: new Date(distribution.dueDate) < now ? 'overdue' : 'approaching',
+    }));
+
+  const courseSummaries = courses.map((course) => {
+    const courseDistributions = distributions.filter((distribution) => distribution.courseId === String(course._id));
+    const totalCopies = courseDistributions.reduce((sum, distribution) => sum + distribution.assignedCount, 0);
+    const courseCompleted = courseDistributions.reduce((sum, distribution) => sum + distribution.completedCount, 0);
+    return {
+      code: course.code,
+      name: course.name,
+      studentCount: course.studentIds?.length || 0,
+      activeAssignmentCount: courseDistributions.filter((distribution) => distribution.pendingCount > 0).length,
+      completionPercent: totalCopies ? Math.round((courseCompleted / totalCopies) * 100) : null,
+    };
+  });
+
+  return {
+    summary: {
+      coursesTaught: courses.length,
+      uniqueStudents: new Set(courses.flatMap((course) => (course.studentIds || []).map(String))).size,
+      activeAssignments: activeDistributions.length,
+      overallCompletionPercent: distributedCopies ? Math.round((completedCopies / distributedCopies) * 100) : 0,
+      completedCopies,
+      distributedCopies,
+    },
+    courses: courseSummaries,
+    upcomingAssignments,
+    needsAttention,
+  };
+};
+
+export const getTeacherDashboard = async (req, res, next) => {
+  try {
+    if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Access denied' });
+    const courses = await Course.find({ teacherId: req.user.userId }).sort({ code: 1 }).lean();
+    const courseIds = courses.map((course) => String(course._id));
+    const assignments = courseIds.length
+      ? await Assignment.find({ courseId: { $in: courseIds }, distributionId: { $ne: null } }).lean()
+      : [];
+    res.json(buildTeacherDashboard(courses, assignments));
   } catch (error) {
     next(error);
   }

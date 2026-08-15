@@ -2,7 +2,7 @@
 
 **Your academic progress, all in one place.**
 
-CPAN 366 Project — BATmen
+CPAN 324 Project — BATmen
 **Team Members:** Alexander Watson, Ibrahim Hagi, Tsering Lama, and Brandon Pagani Lozano
 
 ## Overview
@@ -292,7 +292,7 @@ The frontend communicates with the Express API for persistent application data w
 
 ## Current Status
 
-CourseFlow is feature complete for the CPAN 366 project scope.
+CourseFlow is feature complete for the CPAN 324 project scope.
 
 The final version includes role-based course management, assignment distribution and completion tracking, student and teacher dashboards, announcements, persistent course chat, administrator user management, automated testing, and cloud deployment.
 
